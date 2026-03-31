@@ -159,12 +159,14 @@ export class OciConfig {
   }
 
   /**
-   * Docker network used during the build.
+   * Docker network used during the build. When not configured, no
+   * `--network` flag is passed, which allows both Docker and Podman
+   * to use their own default networking.
    *
-   * @returns Network name, defaulting to `"default"`.
+   * @returns Network name or `undefined`.
    */
-  getDockerNetwork(): string {
-    return this.config.dockerNetwork ?? 'default';
+  getDockerNetwork(): string | undefined {
+    return this.config.dockerNetwork;
   }
 
   /**

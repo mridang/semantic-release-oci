@@ -27,7 +27,7 @@ describe('OciConfig', () => {
       expect(config.isPublishEnabled()).toBe(true);
       expect(config.isLoginEnabled()).toBe(true);
       expect(config.getDockerContext()).toBe('.');
-      expect(config.getDockerNetwork()).toBe('default');
+      expect(config.getDockerNetwork()).toBeUndefined();
       expect(config.isAutoCleanEnabled()).toBe(true);
       expect(config.isBuildQuiet()).toBe(true);
       expect(config.isNoCacheEnabled()).toBe(false);

@@ -300,6 +300,7 @@ describe('semantic-release-oci', () => {
       expect(args.some((a) => a === 'my-app:latest')).toBe(true);
       expect(args.some((a) => a === 'my-app:1-latest')).toBe(true);
       expect(args.some((a) => a === 'my-app:1.2.3')).toBe(true);
+      expect(args.some((a) => a.startsWith('--network'))).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
     });

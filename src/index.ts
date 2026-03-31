@@ -239,7 +239,10 @@ export async function prepare(
     args.push('build');
   }
 
-  args.push(`--network=${config.getDockerNetwork()}`);
+  const network = config.getDockerNetwork();
+  if (network) {
+    args.push(`--network=${network}`);
+  }
 
   if (!isBuildx) {
     args.push('--tag', `${repo}:${buildId}`);

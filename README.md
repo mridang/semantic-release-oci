@@ -119,7 +119,8 @@ All options are case-sensitive and lowercased in the JSON configuration.
   Docker build context path, relative to the project root. Default: `"."`.
 
 - **`dockerNetwork` (string, optional):**
-  Docker network for the build. Default: `"default"`.
+  Docker network for the build. When not set, no `--network` flag is
+  passed, allowing both Docker and Podman to use their own defaults.
 
 - **`dockerAutoClean` (boolean, optional):**
   Remove local images after publish. Default: `true`.
