@@ -43,7 +43,7 @@
   "homepage": "https://github.com/mridang/semantic-release-oci",
   "bugs": "https://github.com/mridang/semantic-release-oci/issues",
   "dependencies": {
-    "@actions/core": "^1.11.1",
+    "@actions/core": "^3.0.0",
     "@semantic-release/error": "^4.0.0"
   },
   "devDependencies": {
@@ -63,6 +63,7 @@
     "knip": "^5.43.6",
     "prettier": "^3.1.1",
     "semantic-release": "^25.0.1",
+    "testcontainers": "^11.5.1",
     "ts-jest": "^29.4.0",
     "typescript": "^5.9.3"
   },
