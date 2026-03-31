@@ -560,6 +560,165 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should use single dash for single-char build flag keys', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBuildFlags: { t: 'production' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('-t');
+      expect(args).toContain('production');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should repeat flags for array build flag values', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBuildFlags: { label: ['foo=bar', 'baz=qux'] },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      const labelIndices = args.reduce<number[]>(
+        (acc, a, i) => (a === '--label' ? [...acc, i] : acc),
+        [],
+      );
+      expect(labelIndices.length).toBe(2);
+      expect(args[labelIndices[0] + 1]).toBe('foo=bar');
+      expect(args[labelIndices[1] + 1]).toBe('baz=qux');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should pass through flag keys that already start with a dash', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBuildFlags: { '-t': 'mytag' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      const idx = args.indexOf('-t');
+      expect(idx).toBeGreaterThan(-1);
+      expect(args[idx + 1]).toBe('mytag');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should normalize underscore flag keys to kebab-case', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBuildFlags: { cache_from: 'type=inline' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('--cache-from');
+      expect(args).toContain('type=inline');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should omit --quiet when dockerBuildQuiet is false', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBuildQuiet: false,
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).not.toContain('--quiet');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should fall back to buildId when no SHA is in build output', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('Step 1/1 : FROM alpine\n');
+      const context = makeContext(tmpDir);
+
+      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        expect.stringMatching(/sha: [a-f0-9]{20}/),
+      );
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should include --pull in buildx mode', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerPlatform: ['linux/amd64'],
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('--pull');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should not tag with buildId in buildx mode', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerPlatform: ['linux/amd64'],
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
+      expect(tagArgs.every((t) => !t.match(/:[a-f0-9]{20}$/))).toBe(true);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should extract SHA from build output', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -656,6 +815,38 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should fall back to empty image name when no config or package.json', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        { dockerTags: ['latest'] } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args.some((a) => a === ':latest')).toBe(true);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should handle missing nextRelease gracefully', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        { dockerImage: 'my-app', dockerTags: ['latest'] } as OciPluginConfig,
+        makeContext(tmpDir, {}, { nextRelease: undefined }),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args.some((a) => a === 'my-app:latest')).toBe(true);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should propagate build errors', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -733,6 +924,27 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should publish with fallback empty image name', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('writing image sha256:abc123\n');
+
+      const context = makeContext(tmpDir);
+      const cfg = { dockerTags: ['latest'] } as OciPluginConfig;
+      await prepare(cfg, context);
+
+      execMock.mockClear();
+      execMock.mockReturnValue('');
+
+      await publish(cfg, context);
+
+      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const pushCalls = allArgs.filter((a) => a[0] === 'push');
+      expect(pushCalls.length).toBe(1);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should skip publish when no build state exists', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -768,6 +980,27 @@ describe('semantic-release-oci', () => {
 
       const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(true);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should skip rmi when no images are found during cleanup', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('writing image sha256:abc123\n');
+
+      const context = makeContext(tmpDir);
+      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+
+      execMock.mockImplementation((args: string[]) => {
+        if (args[0] === 'images') return '   \n';
+        return '';
+      });
+
+      await publish({ dockerImage: 'my-app' } as OciPluginConfig, context);
+
+      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
