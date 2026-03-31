@@ -155,12 +155,16 @@ build step (via `--push`) rather than tagged and pushed separately.
 
 ## GitHub Actions Outputs
 
-When running in GitHub Actions, the plugin sets the following outputs:
+When running in GitHub Actions, the plugin sets the following step
+outputs, accessible via `${{ steps.<step-id>.outputs.<name> }}`:
 
 - `docker_image`: Full image path (without tag)
 - `docker_image_build_id`: Unique build identifier
-- `docker_image_sha_short`: First 12 characters of the image SHA
+- `docker_image_sha_short`: First 12 characters of the image SHA256 digest
 - `docker_image_sha_long`: Full SHA256 digest
+
+These outputs can be used in subsequent steps, for example to sign
+the image or to reference the exact digest in a deployment manifest.
 
 ## Known Issues
 
