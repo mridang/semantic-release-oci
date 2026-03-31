@@ -101,7 +101,9 @@ All options are case-sensitive and lowercased in the JSON configuration.
 
 - **`dockerBuildFlags` (object, optional):**
   Additional docker build flags. Keys are flag names, values are strings,
-  arrays, or `null` (for boolean flags).
+  arrays, or `null` (for boolean flags). For example, to disable default
+  provenance attestations in buildx (required for AWS Lambda compatible
+  images), use `{ provenance: 'false' }`.
 
 - **`dockerPlatform` (string[], optional):**
   Target platform(s) for multi-arch builds via `docker buildx`. When set,

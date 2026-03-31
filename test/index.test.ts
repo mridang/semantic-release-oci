@@ -522,6 +522,27 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should pass provenance flag via dockerBuildFlags', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerPlatform: ['linux/amd64'],
+          dockerBuildFlags: { provenance: 'false' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('--provenance');
+      expect(args).toContain('false');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should extract SHA from build output', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
