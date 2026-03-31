@@ -9,41 +9,58 @@ import { OciConfig, OciPluginConfig } from './plugin-config.js';
 const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
 const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
 
+/**
+ * Internal state tracked for each built Docker image across the
+ * prepare and publish lifecycle hooks.
+ */
 interface BuildState {
-  sha: string;
-  sha256: string;
-  buildId: string;
-  tags: string[];
-  repo: string;
-  isBuildx: boolean;
+  readonly sha: string;
+  readonly sha256: string;
+  readonly buildId: string;
+  readonly tags: readonly string[];
+  readonly repo: string;
+  readonly isBuildx: boolean;
 }
 
+/**
+ * Simplified semantic-release context consumed by the plugin
+ * lifecycle hooks. Only the fields used by this plugin are typed.
+ */
 interface SemanticReleaseContext {
-  cwd: string;
-  env: Record<string, string | undefined>;
-  logger: {
+  readonly cwd: string;
+  readonly env: Record<string, string | undefined>;
+  readonly logger: {
     log: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
   };
-  nextRelease?: {
-    version?: string;
-    gitTag?: string;
-    gitHead?: string;
-    channel?: string;
-    type?: string;
+  readonly nextRelease?: {
+    readonly version?: string;
+    readonly gitTag?: string;
+    readonly gitHead?: string;
+    readonly channel?: string;
+    readonly type?: string;
   };
-  lastRelease?: {
-    version?: string;
-    gitTag?: string;
-    gitHead?: string;
+  readonly lastRelease?: {
+    readonly version?: string;
+    readonly gitTag?: string;
+    readonly gitHead?: string;
   };
-  options?: {
-    dryRun?: boolean;
+  readonly options?: {
+    readonly dryRun?: boolean;
   };
 }
 
 const buildStates = new Map<string, BuildState>();
 
+/**
+ * Replaces `{{variable}}` placeholders in a template string with
+ * values from the provided variables map. Unknown variables resolve
+ * to the empty string.
+ *
+ * @param template Template string containing `{{key}}` placeholders.
+ * @param vars     Key-value map of replacement values.
+ * @returns        The rendered string.
+ */
 export function renderTemplate(
   template: string,
   vars: Record<string, string | number | undefined>,
@@ -55,24 +72,6 @@ export function renderTemplate(
       return value !== undefined ? String(value) : '';
     },
   );
-}
-
-function buildTemplateVars(
-  context: SemanticReleaseContext,
-): Record<string, string | number | undefined> {
-  const version = context.nextRelease?.version ?? '';
-  const parts = version.split('.');
-  return {
-    version,
-    major: parts[0] ?? '',
-    minor: parts[1] ?? '',
-    patch: parts[2] ?? '',
-    gitTag: context.nextRelease?.gitTag ?? '',
-    gitHead: context.nextRelease?.gitHead ?? '',
-    channel: context.nextRelease?.channel ?? '',
-    type: context.nextRelease?.type ?? '',
-    now: new Date().toISOString(),
-  };
 }
 
 function parsePkgName(pkgname: string): {
@@ -102,30 +101,11 @@ function buildImageRepo(
   return parts.join('/');
 }
 
-function normalizeFlag(key: string): string {
-  if (key.startsWith('-')) return key;
-  const normalized = key.toLowerCase().replace(/_/g, '-');
-  return key.length === 1 ? `-${normalized}` : `--${normalized}`;
-}
-
-function buildFlagsArray(
-  flags: Record<string, string | string[] | null>,
-): string[] {
-  const output: string[] = [];
-  for (const [key, value] of Object.entries(flags)) {
-    const flag = normalizeFlag(key);
-    if (value === null) {
-      output.push(flag);
-      continue;
-    }
-    const values = Array.isArray(value) ? value : [value];
-    for (const v of values) {
-      output.push(flag, v);
-    }
-  }
-  return output;
-}
-
+/**
+ * Executes Docker CLI commands via `child_process.execSync`. Exported
+ * as a mutable object so tests can replace `.exec` without running
+ * into ESM module immutability restrictions.
+ */
 export const commandRunner = {
   exec(
     args: string[],
@@ -149,6 +129,14 @@ export const commandRunner = {
   },
 };
 
+/**
+ * Verifies that the Docker image name is resolvable, the Dockerfile
+ * exists, and (when enabled) performs Docker registry login using
+ * configured credentials.
+ *
+ * @param pluginConfig Raw plugin configuration from semantic-release.
+ * @param context      Semantic-release context with env and logger.
+ */
 export async function verifyConditions(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
@@ -207,6 +195,14 @@ export async function verifyConditions(
   );
 }
 
+/**
+ * Builds a Docker image using the configured Dockerfile, tags, build
+ * arguments, and optional buildx multi-platform support. Stores build
+ * state in a module-level map for the subsequent publish step.
+ *
+ * @param pluginConfig Raw plugin configuration from semantic-release.
+ * @param context      Semantic-release context with env and logger.
+ */
 export async function prepare(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
@@ -221,8 +217,21 @@ export async function prepare(
   const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
   const registry = config.getDockerRegistry();
   const repo = buildImageRepo(registry, project, imageName);
-  const vars = buildTemplateVars(context);
   const isDryRun = context.options?.dryRun === true;
+
+  const version = context.nextRelease?.version ?? '';
+  const [major = '', minor = '', patch = ''] = version.split('.');
+  const vars: Record<string, string | number | undefined> = {
+    version,
+    major,
+    minor,
+    patch,
+    gitTag: context.nextRelease?.gitTag ?? '',
+    gitHead: context.nextRelease?.gitHead ?? '',
+    channel: context.nextRelease?.channel ?? '',
+    type: context.nextRelease?.type ?? '',
+    now: new Date().toISOString(),
+  };
 
   const tags = config
     .getDockerTags()
@@ -273,7 +282,15 @@ export async function prepare(
     }
   }
 
-  const extraFlags = buildFlagsArray(config.getDockerBuildFlags());
+  const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
+    ([key, value]): string[] => {
+      const flag = key.startsWith('-')
+        ? key
+        : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
+      if (value === null) return [flag];
+      return (Array.isArray(value) ? value : [value]).flatMap((v) => [flag, v]);
+    },
+  );
   args.push(...extraFlags);
 
   if (isBuildx) {
@@ -325,6 +342,14 @@ export async function prepare(
   context.logger.log(`Docker image built: ${repo}:${buildId} (sha: ${sha})`);
 }
 
+/**
+ * Tags and pushes the previously built Docker image to the configured
+ * registry. Sets GitHub Actions outputs and optionally removes local
+ * images after a successful push.
+ *
+ * @param pluginConfig Raw plugin configuration from semantic-release.
+ * @param context      Semantic-release context with env and logger.
+ */
 export async function publish(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
@@ -367,7 +392,7 @@ export async function publish(
     actions.setOutput('docker_image_sha_short', state.sha);
     actions.setOutput('docker_image_sha_long', state.sha256);
   } catch {
-    /* not running in GitHub Actions */
+    /* ignored outside GitHub Actions */
   }
 
   if (config.isAutoCleanEnabled() && !state.isBuildx) {
