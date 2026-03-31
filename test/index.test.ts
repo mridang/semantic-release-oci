@@ -88,6 +88,10 @@ describe('semantic-release-oci', () => {
     it('should pass through strings without templates', () => {
       expect(renderTemplate('latest', {})).toBe('latest');
     });
+
+    it('should render numeric values as strings', () => {
+      expect(renderTemplate('v{{major}}', { major: 1 })).toBe('v1');
+    });
   });
 
   describe('verifyConditions', () => {
@@ -220,6 +224,34 @@ describe('semantic-release-oci', () => {
       await expect(
         verifyConditions(
           { dockerImage: 'custom-image' } as OciPluginConfig,
+          makeContext(tmpDir),
+        ),
+      ).resolves.toBeUndefined();
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should fall back to package.json name when dockerImage is not set', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'fallback-app');
+      writeDockerfile(tmpDir);
+
+      await expect(
+        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
+      ).resolves.toBeUndefined();
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should resolve a custom Dockerfile path', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
+      fs.mkdirSync(path.join(tmpDir, 'build'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'build', 'Dockerfile'), 'FROM alpine');
+
+      await expect(
+        verifyConditions(
+          { dockerFile: 'build/Dockerfile' } as OciPluginConfig,
           makeContext(tmpDir),
         ),
       ).resolves.toBeUndefined();
@@ -506,14 +538,90 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should rethrow build errors and preserve stdout from the error', async () => {
+    it('should use a custom Dockerfile path in build command', async () => {
+      const tmpDir = makeTempDir();
+      fs.mkdirSync(path.join(tmpDir, 'build'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'build', 'Dockerfile'), 'FROM alpine');
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerFile: 'build/Dockerfile',
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain(path.resolve(tmpDir, 'build/Dockerfile'));
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should use a custom context path in build command', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
-      const buildError = new Error('build failed');
-      (buildError as unknown as Record<string, unknown>).stdout =
-        'partial output sha256:abc123';
+      fs.mkdirSync(path.join(tmpDir, 'app'), { recursive: true });
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerContext: 'app',
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain(path.resolve(tmpDir, 'app'));
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should use a custom network in build command', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerNetwork: 'host',
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('--network=host');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should produce no version tags when dockerTags is empty', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerTags: [],
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
+      expect(tagArgs.length).toBe(1);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should propagate build errors', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
-        throw buildError;
+        throw new Error('build failed');
       });
 
       await expect(

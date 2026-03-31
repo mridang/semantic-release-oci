@@ -91,8 +91,8 @@ All options are case-sensitive and lowercased in the JSON configuration.
 
 - **`dockerTags` (string[], optional):**
   Tag templates with `{{variable}}` substitution. Available variables:
-  `version`, `major`, `minor`, `patch`, `gitTag`, `gitHead`, `channel`.
-  Default: `['latest', '{{major}}-latest', '{{version}}']`.
+  `version`, `major`, `minor`, `patch`, `gitTag`, `gitHead`, `channel`,
+  `type`, `now`. Default: `['latest', '{{major}}-latest', '{{version}}']`.
 
 - **`dockerArgs` (object, optional):**
   Build arguments as key-value pairs. Values support `{{variable}}`
@@ -133,6 +133,16 @@ All options are case-sensitive and lowercased in the JSON configuration.
 - **`dockerBuildCacheFrom` (string | string[], optional):**
   External cache sources for the build.
 
+## Environment Variables
+
+When `dockerLogin` is enabled (the default), the plugin reads credentials
+from the following environment variables:
+
+- **`DOCKER_REGISTRY_USER`**: Username for `docker login`.
+- **`DOCKER_REGISTRY_PASSWORD`**: Password for `docker login`.
+- **`GITHUB_TOKEN`**: Used as a password fallback when
+  `DOCKER_REGISTRY_PASSWORD` is not set.
+
 ## Multi-Platform Builds
 
 When `dockerPlatform` is configured with one or more platforms (e.g.,
@@ -152,6 +162,11 @@ When running in GitHub Actions, the plugin sets the following outputs:
 ## Known Issues
 
 - None.
+
+## Useful links
+
+- **[Docker](https://docs.docker.com/):** Docker documentation.
+- **[Buildx](https://docs.docker.com/build/buildx/):** Docker multi-platform build documentation.
 
 ## Contributing
 

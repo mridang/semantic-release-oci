@@ -94,11 +94,7 @@ function buildImageRepo(
   project: string | undefined,
   name: string,
 ): string {
-  const parts: string[] = [];
-  if (registry) parts.push(registry);
-  if (project) parts.push(project);
-  parts.push(name);
-  return parts.join('/');
+  return [registry, project, name].filter(Boolean).join('/');
 }
 
 /**
@@ -141,10 +137,7 @@ export async function verifyConditions(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
 ): Promise<void> {
-  const config = new OciConfig(
-    pluginConfig,
-    context.env as Record<string, string | undefined>,
-  );
+  const config = new OciConfig(pluginConfig, context.env);
   const pkg = readPkg(context.cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name;
@@ -207,10 +200,7 @@ export async function prepare(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
 ): Promise<void> {
-  const config = new OciConfig(
-    pluginConfig,
-    context.env as Record<string, string | undefined>,
-  );
+  const config = new OciConfig(pluginConfig, context.env);
   const pkg = readPkg(context.cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? '';
@@ -304,31 +294,21 @@ export async function prepare(
   args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
   args.push(path.resolve(context.cwd, config.getDockerContext()));
 
-  let stdout = '';
-  try {
-    stdout = commandRunner.exec(
-      args,
-      { cwd: context.cwd, stdio: 'pipe' },
-      context.logger,
-    );
-  } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'stdout' in err) {
-      stdout = String((err as { stdout: unknown }).stdout ?? '');
-    }
-    throw err;
-  }
+  const stdout = commandRunner.exec(
+    args,
+    { cwd: context.cwd, stdio: 'pipe' },
+    context.logger,
+  );
 
-  let sha = buildId;
-  let sha256 = '';
-  const lines = stdout.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const match = SHA_REGEX.exec(lines[i]);
-    if (match?.groups?.['sha']) {
-      sha256 = match.groups['sha'];
-      sha = sha256.substring(0, 12);
-      break;
-    }
-  }
+  const shaMatch = stdout
+    .split('\n')
+    .reverse()
+    .reduce<string | undefined>(
+      (found, line) => found ?? SHA_REGEX.exec(line)?.groups?.['sha'],
+      undefined,
+    );
+  const sha256 = shaMatch ?? '';
+  const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
   buildStates.set(repo, {
     sha,
@@ -354,10 +334,7 @@ export async function publish(
   pluginConfig: OciPluginConfig,
   context: SemanticReleaseContext,
 ): Promise<void> {
-  const config = new OciConfig(
-    pluginConfig,
-    context.env as Record<string, string | undefined>,
-  );
+  const config = new OciConfig(pluginConfig, context.env);
   const pkg = readPkg(context.cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? '';

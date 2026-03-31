@@ -56,7 +56,7 @@ export class OciConfig {
    * @returns Registry string or `undefined`.
    */
   getDockerRegistry(): string | undefined {
-    return this.config.dockerRegistry ?? undefined;
+    return this.config.dockerRegistry;
   }
 
   /**
@@ -65,7 +65,7 @@ export class OciConfig {
    * @returns Image name or `undefined`.
    */
   getDockerImage(): string | undefined {
-    return this.config.dockerImage ?? undefined;
+    return this.config.dockerImage;
   }
 
   /**
@@ -75,7 +75,7 @@ export class OciConfig {
    * @returns Project name or `undefined`.
    */
   getDockerProject(): string | undefined {
-    return this.config.dockerProject ?? undefined;
+    return this.config.dockerProject;
   }
 
   /**
