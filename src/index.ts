@@ -138,6 +138,16 @@ export async function verifyConditions(
   context: SemanticReleaseContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
+
+  try {
+    commandRunner.exec(['version'], { cwd: context.cwd }, context.logger);
+  } catch {
+    throw new SemanticReleaseError(
+      'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
+      'ENOENT',
+    );
+  }
+
   const pkg = readPkg(context.cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name;

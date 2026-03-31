@@ -95,6 +95,21 @@ describe('semantic-release-oci', () => {
   });
 
   describe('verifyConditions', () => {
+    it('should throw ENOENT when docker is not available', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
+      writeDockerfile(tmpDir);
+      execMock.mockImplementation(() => {
+        throw new Error('spawn docker ENOENT');
+      });
+
+      await expect(
+        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
+      ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should throw EINVAL when no image name can be determined', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -168,7 +183,8 @@ describe('semantic-release-oci', () => {
         ),
       ).resolves.toBeUndefined();
 
-      expect(execMock).not.toHaveBeenCalled();
+      expect(execMock).toHaveBeenCalledTimes(1);
+      expect(execMock.mock.calls[0][0]).toEqual(['version']);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -188,7 +204,8 @@ describe('semantic-release-oci', () => {
         ),
       ).resolves.toBeUndefined();
 
-      expect(execMock).not.toHaveBeenCalled();
+      expect(execMock).toHaveBeenCalledTimes(1);
+      expect(execMock.mock.calls[0][0]).toEqual(['version']);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
