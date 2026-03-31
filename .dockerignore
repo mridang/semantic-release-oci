@@ -1,8 +1,0 @@
-node_modules/
-*.tgz
-compose/
-node_modules/
-coverage/
-release.config.cjs
-.github/
-.nyc_outpuut/

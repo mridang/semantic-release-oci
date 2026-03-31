@@ -1,110 +1,72 @@
 {
-  "name": "@codedependant/semantic-release-docker",
-  "private": false,
-  "version": "5.1.1",
-  "description": "docker package",
+  "name": "@mridang/semantic-release-oci",
+  "version": "1.0.0",
   "type": "module",
-  "main": "index.cjs",
-  "exports": {
-    ".": {
-      "import": "./index.js",
-      "require": "./index.cjs"
-    }
+  "scripts": {
+    "prepack": "tsc",
+    "build": "tsc",
+    "test": "jest --verbose --config=jest.config.mjs --runInBand",
+    "test:watch": "npm run test -- --watch",
+    "test:debug": "jest --verbose --config=jest.config.mjs --runInBand --detectOpenHandles",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "npx eslint .",
+    "lint:fix": "npx eslint . --fix"
   },
-  "engines": {
-    "node": ">=22"
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "semver",
+    "nodejs",
+    "semantic-release",
+    "docker",
+    "oci"
+  ],
+  "author": {
+    "name": "Mridang Agarwalla",
+    "email": "mridang.agarwalla@gmail.com",
+    "url": "https://github.com/mridang"
   },
   "files": [
-    "lib/",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-    "package.json",
-    "index.js",
-    "index.cjs"
+    "dist"
   ],
-  "scripts": {
-    "test": "docker-compose -f compose/base.yml -f compose/test.yml up --exit-code-from semantic-release --force-recreate --remove-orphans --build",
-    "start": "docker-compose -f compose/base.yml -f compose/dev.yml up --force-recreate --remove-orphans --build",
-    "stop": "docker-compose -f compose/base.yml -f compose/dev.yml down",
-    "tap": "c8 tap",
-    "lint": "eslint .",
-    "lint:fix": "npm run lint -- --fix",
-    "local": "env $(cat env/local.env)",
-    "pretap": "npm run lint",
-    "release": "semantic-release",
-    "release:dry": "semantic-release --no-ci --dry-run --branches=${BRANCH_NAME:-main}"
-  },
-  "keywords": [
-    "semantic-release"
-  ],
-  "author": "Eric Satterwhite <esatterwhite@wi.rr.com>",
-  "license": "MIT",
-  "publishConfig": {
-    "access": "public"
+  "license": "Apache-2.0",
+  "description": "Semantic Release plugin that builds, tags, and pushes Docker/OCI images to a container registry",
+  "private": false,
+  "engines": {
+    "node": ">=22.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/esatterwhite/semantic-release-docker.git"
+    "url": "git+https://github.com/mridang/semantic-release-oci.git"
   },
-  "tap": {
-    "timeout": 120,
-    "disable-coverage": true,
-    "include": [
-      "test/unit/**/*.js",
-      "test/integration/**/*.js"
-    ]
-  },
-  "c8": {
-    "check-coverage": true,
-    "lines": 95,
-    "branches": 95,
-    "statements": 95,
-    "functions": 95,
-    "all": true,
-    "src": "lib",
-    "exclude": [
-      "coverage/",
-      "test/",
-      ".eslintrc.cjs",
-      "release.config.cjs",
-      "index.cjs"
-    ],
-    "reporter": [
-      "text",
-      "text-summary",
-      "json",
-      "json-summary",
-      "html"
-    ]
+  "homepage": "https://github.com/mridang/semantic-release-oci",
+  "bugs": "https://github.com/mridang/semantic-release-oci/issues",
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@semantic-release/error": "^4.0.0"
   },
   "devDependencies": {
-    "@semantic-release/changelog": "^6.0.3",
+    "@jest/globals": "^30.0.3",
+    "@mridang/eslint-defaults": "^1.4.0",
+    "@semantic-release/commit-analyzer": "^13.0.1",
     "@semantic-release/git": "^10.0.1",
-    "@semantic-release/github": "^12.0.6",
-    "c8": "^11.0.0",
-    "eslint": "^8.5.0",
-    "eslint-config-codedependant": "^3.0.0",
-    "semantic-release": "^25.0.3",
-    "sinon": "^21.0.3",
-    "stream-buffers": "^3.0.3",
-    "tap": "^21.6.2"
+    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/npm": "^13.1.1",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "@tsconfig/node22": "^22.0.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.18.12",
+    "eslint": "^9.27.0",
+    "jest": "^30.0.3",
+    "jest-junit": "^16.0.0",
+    "knip": "^5.43.6",
+    "prettier": "^3.1.1",
+    "semantic-release": "^25.0.1",
+    "ts-jest": "^29.4.0",
+    "typescript": "^5.9.3"
   },
-  "dependencies": {
-    "@actions/core": "^3.0.0",
-    "@semantic-release/error": "^4.0.0",
-    "debug": "^4.1.1",
-    "execa": "^4.0.2",
-    "handlebars": "^4.7.7",
-    "object-hash": "^3.0.0",
-    "semver": "^7.3.2"
-  },
-  "directories": {
-    "lib": "lib",
-    "test": "test"
-  },
-  "bugs": {
-    "url": "https://github.com/esatterwhite/semantic-release-docker/issues"
-  },
-  "homepage": "https://github.com/esatterwhite/semantic-release-docker#readme"
+  "publishConfig": {
+    "access": "public"
+  }
 }

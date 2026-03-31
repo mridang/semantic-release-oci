@@ -1,4 +1,0 @@
-FROM debian:bullseye-slim
-COPY . /opt/whizbang
-WORKDIR /opt/whizbang
-CMD ["echo", "$PWD"]
