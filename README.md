@@ -174,6 +174,14 @@ If you have suggestions for how this plugin could be improved, or
 want to report a bug, open an issue — we'd love all and any
 contributions.
 
+## Credits
+
+This project is derived from
+[`@codedependant/semantic-release-docker`](https://github.com/esatterwhite/semantic-release-docker)
+by [Eric Satterwhite](https://github.com/esatterwhite), originally
+licensed under the MIT License. See the [NOTICE](./NOTICE) file for
+the full original license text.
+
 ## License
 
 Apache License 2.0 © 2024 Mridang Agarwalla
