@@ -109,6 +109,7 @@ export const commandRunner = {
       cwd: string;
       input?: string;
       stdio?: 'inherit' | 'pipe';
+      timeout?: number;
     },
     logger: SemanticReleaseContext['logger'],
   ): string {
@@ -119,7 +120,7 @@ export const commandRunner = {
       encoding: 'utf8',
       input: options.input,
       stdio: options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
-      timeout: 600000,
+      timeout: options.timeout ?? 600_000,
     });
     return typeof result === 'string' ? result : '';
   },
@@ -140,7 +141,7 @@ export async function verifyConditions(
   const config = new OciConfig(pluginConfig, context.env);
 
   try {
-    commandRunner.exec(['version'], { cwd: context.cwd }, context.logger);
+    commandRunner.exec(['version'], { cwd: context.cwd, timeout: config.getDockerTimeout() }, context.logger);
   } catch {
     throw new SemanticReleaseError(
       'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
@@ -186,6 +187,7 @@ export async function verifyConditions(
       {
         cwd: context.cwd,
         input: config.getRegistryPassword(),
+        timeout: config.getDockerTimeout(),
       },
       context.logger,
     );
@@ -309,7 +311,7 @@ export async function prepare(
 
   const stdout = commandRunner.exec(
     args,
-    { cwd: context.cwd, stdio: 'pipe' },
+    { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
     context.logger,
   );
 
@@ -365,12 +367,12 @@ export async function publish(
     for (const tag of state.tags) {
       commandRunner.exec(
         ['tag', `${state.repo}:${state.buildId}`, `${state.repo}:${tag}`],
-        { cwd: context.cwd },
+        { cwd: context.cwd, timeout: config.getDockerTimeout() },
         context.logger,
       );
       commandRunner.exec(
         ['push', `${state.repo}:${tag}`],
-        { cwd: context.cwd, stdio: 'inherit' },
+        { cwd: context.cwd, stdio: 'inherit', timeout: config.getDockerTimeout() },
         context.logger,
       );
     }
@@ -390,14 +392,14 @@ export async function publish(
       const images = commandRunner
         .exec(
           ['images', state.repo, '-q'],
-          { cwd: context.cwd },
+          { cwd: context.cwd, timeout: config.getDockerTimeout() },
           context.logger,
         )
         .trim();
       if (images) {
         commandRunner.exec(
           ['rmi', '-f', ...images.split('\n')],
-          { cwd: context.cwd },
+          { cwd: context.cwd, timeout: config.getDockerTimeout() },
           context.logger,
         );
       }
