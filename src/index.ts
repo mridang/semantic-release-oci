@@ -141,7 +141,11 @@ export async function verifyConditions(
   const config = new OciConfig(pluginConfig, context.env);
 
   try {
-    commandRunner.exec(['version'], { cwd: context.cwd, timeout: config.getDockerTimeout() }, context.logger);
+    commandRunner.exec(
+      ['version'],
+      { cwd: context.cwd, timeout: config.getDockerTimeout() },
+      context.logger,
+    );
   } catch {
     throw new SemanticReleaseError(
       'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
@@ -372,7 +376,11 @@ export async function publish(
       );
       commandRunner.exec(
         ['push', `${state.repo}:${tag}`],
-        { cwd: context.cwd, stdio: 'inherit', timeout: config.getDockerTimeout() },
+        {
+          cwd: context.cwd,
+          stdio: 'inherit',
+          timeout: config.getDockerTimeout(),
+        },
         context.logger,
       );
     }
