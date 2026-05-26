@@ -646,6 +646,28 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should forward dockerTimeout to exec options', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerTimeout: 1_800_000,
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      expect(execMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ timeout: 1_800_000 }),
+        expect.anything(),
+      );
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should omit --quiet when dockerBuildQuiet is false', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);

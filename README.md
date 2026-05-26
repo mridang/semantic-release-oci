@@ -136,6 +136,11 @@ All options are case-sensitive and lowercased in the JSON configuration.
 - **`dockerBuildCacheFrom` (string | string[], optional):**
   External cache sources for the build.
 
+- **`dockerTimeout` (number, optional):**
+  Timeout in milliseconds applied to each individual Docker CLI invocation
+  (build, push, login, tag, and cleanup). Default: `600000` (10 minutes).
+  Increase this when building large images or pushing to slow registries.
+
 ## Environment Variables
 
 When `dockerLogin` is enabled (the default), the plugin reads credentials

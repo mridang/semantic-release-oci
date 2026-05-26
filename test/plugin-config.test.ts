@@ -33,6 +33,7 @@ describe('OciConfig', () => {
       expect(config.isNoCacheEnabled()).toBe(false);
       expect(config.getDockerBuildCacheFrom()).toEqual([]);
       expect(config.isBuildxEnabled()).toBe(false);
+      expect(config.getDockerTimeout()).toBe(600_000);
     });
   });
 
@@ -64,6 +65,11 @@ describe('OciConfig', () => {
       expect(config.isAutoCleanEnabled()).toBe(false);
       expect(config.isBuildQuiet()).toBe(false);
       expect(config.isNoCacheEnabled()).toBe(true);
+    });
+
+    it('should use provided dockerTimeout over default', () => {
+      const config = makeConfig({ dockerTimeout: 1_800_000 });
+      expect(config.getDockerTimeout()).toBe(1_800_000);
     });
   });
 

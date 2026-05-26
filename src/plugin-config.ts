@@ -22,6 +22,7 @@ export interface OciPluginConfig extends Config {
   readonly dockerBuildQuiet?: boolean;
   readonly dockerNoCache?: boolean;
   readonly dockerBuildCacheFrom?: string | string[];
+  readonly dockerTimeout?: number;
 }
 
 /**
@@ -208,6 +209,15 @@ export class OciConfig {
       return cacheFrom.split(/\s*,\s*/);
     }
     return cacheFrom;
+  }
+
+  /**
+   * Timeout in milliseconds for each Docker CLI invocation.
+   *
+   * @returns Configured timeout, defaulting to 600 000 ms (10 minutes).
+   */
+  getDockerTimeout(): number {
+    return this.config.dockerTimeout ?? 600_000;
   }
 
   /**
