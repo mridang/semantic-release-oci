@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
@@ -98,6 +99,40 @@ function buildImageRepo(
 }
 
 /**
+ * Reads the digest of the built image from a `docker buildx bake`
+ * metadata file. Looks up the configured image target, falling back to
+ * the first target that recorded a `containerimage.digest`. The
+ * `sha256:` prefix is stripped to match the digest shape used elsewhere.
+ *
+ * @param metadataPath Path to the bake metadata JSON file.
+ * @param imageTarget  Target whose digest is preferred, or `"*"`.
+ * @returns The image digest hex, or an empty string when unavailable.
+ */
+export function parseBakeDigest(
+  metadataPath: string,
+  imageTarget: string,
+): string {
+  if (!metadataPath || !fs.existsSync(metadataPath)) {
+    return '';
+  }
+  try {
+    const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const digestKey = 'containerimage.digest';
+    const entry =
+      imageTarget !== '*' && meta[imageTarget]
+        ? meta[imageTarget]
+        : Object.values(meta).find((t) => typeof t?.[digestKey] === 'string');
+    const digest = entry?.[digestKey];
+    return typeof digest === 'string' ? digest.replace(/^sha256:/, '') : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Executes Docker CLI commands via `child_process.execSync`. Exported
  * as a mutable object so tests can replace `.exec` without running
  * into ESM module immutability restrictions.
@@ -164,12 +199,32 @@ export async function verifyConditions(
     );
   }
 
-  const dockerfile = path.resolve(context.cwd, config.getDockerFile());
-  if (!fs.existsSync(dockerfile)) {
-    throw new SemanticReleaseError(
-      `Dockerfile not found at ${dockerfile}`,
-      'ENOENT',
-    );
+  let verifiedTarget: string;
+  if (config.isBakeEnabled()) {
+    const bake = config.getDockerBake()!;
+    if (!bake.group && !bake.target) {
+      throw new SemanticReleaseError(
+        'dockerBake requires either "group" or "target" to be set.',
+        'EINVAL',
+      );
+    }
+    const bakeFile = path.resolve(context.cwd, bake.file);
+    if (!fs.existsSync(bakeFile)) {
+      throw new SemanticReleaseError(
+        `Bake file not found at ${bakeFile}`,
+        'ENOENT',
+      );
+    }
+    verifiedTarget = `bakeFile="${bakeFile}"`;
+  } else {
+    const dockerfile = path.resolve(context.cwd, config.getDockerFile());
+    if (!fs.existsSync(dockerfile)) {
+      throw new SemanticReleaseError(
+        `Dockerfile not found at ${dockerfile}`,
+        'ENOENT',
+      );
+    }
+    verifiedTarget = `dockerfile="${dockerfile}"`;
   }
 
   if (config.isLoginEnabled() && config.hasCredentials()) {
@@ -199,9 +254,7 @@ export async function verifyConditions(
     context.logger.log('Docker login successful.');
   }
 
-  context.logger.log(
-    `Verified: image="${imageName}", dockerfile="${dockerfile}"`,
-  );
+  context.logger.log(`Verified: image="${imageName}", ${verifiedTarget}`);
 }
 
 /**
@@ -248,10 +301,19 @@ export async function prepare(
   const bake = config.getDockerBake();
   const isBuildx = bake !== undefined || config.isBuildxEnabled();
 
+  let bakeMetadataFile = '';
   const args: string[] = [];
 
   if (bake) {
-    args.push('buildx', 'bake', '--file', path.resolve(context.cwd, bake.file));
+    bakeMetadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
+    args.push(
+      'buildx',
+      'bake',
+      '--file',
+      path.resolve(context.cwd, bake.file),
+      '--metadata-file',
+      bakeMetadataFile,
+    );
 
     if (isDryRun) {
       args.push('--set', '*.output=type=cacheonly');
@@ -262,12 +324,16 @@ export async function prepare(
     }
 
     for (const [key, value] of Object.entries(config.getDockerArgs())) {
-      if (value !== true) {
-        args.push(
-          '--set',
-          `*.args.${key}=${renderTemplate(String(value), vars)}`,
+      if (value === true) {
+        context.logger.log(
+          `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
         );
+        continue;
       }
+      args.push(
+        '--set',
+        `*.args.${key}=${renderTemplate(String(value), vars)}`,
+      );
     }
 
     const selector = bake.target ?? bake.group;
@@ -351,14 +417,20 @@ export async function prepare(
     context.logger,
   );
 
-  const shaMatch = stdout
-    .split('\n')
-    .reverse()
-    .reduce<string | undefined>(
-      (found, line) => found ?? SHA_REGEX.exec(line)?.groups?.['sha'],
-      undefined,
-    );
-  const sha256 = shaMatch ?? '';
+  let sha256: string;
+  if (bake) {
+    sha256 = parseBakeDigest(bakeMetadataFile, bake.imageTarget);
+    fs.rmSync(bakeMetadataFile, { force: true });
+  } else {
+    sha256 =
+      stdout
+        .split('\n')
+        .reverse()
+        .reduce<string | undefined>(
+          (found, line) => found ?? SHA_REGEX.exec(line)?.groups?.['sha'],
+          undefined,
+        ) ?? '';
+  }
   const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
   buildStates.set(repo, {

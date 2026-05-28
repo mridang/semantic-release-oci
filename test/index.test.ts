@@ -15,6 +15,7 @@ import {
   publish,
   commandRunner,
   renderTemplate,
+  parseBakeDigest,
 } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 
@@ -94,6 +95,54 @@ describe('semantic-release-oci', () => {
     });
   });
 
+  describe('parseBakeDigest', () => {
+    it('should return the named target digest without the sha256 prefix', () => {
+      const tmpDir = makeTempDir();
+      const file = path.join(tmpDir, 'meta.json');
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          image: { 'containerimage.digest': 'sha256:abc123' },
+          binaries: {},
+        }),
+      );
+
+      expect(parseBakeDigest(file, 'image')).toBe('abc123');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should fall back to the first target with a digest for wildcard', () => {
+      const tmpDir = makeTempDir();
+      const file = path.join(tmpDir, 'meta.json');
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          binaries: {},
+          image: { 'containerimage.digest': 'sha256:def456' },
+        }),
+      );
+
+      expect(parseBakeDigest(file, '*')).toBe('def456');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should return empty string when the metadata file is missing', () => {
+      expect(parseBakeDigest('/nonexistent/meta.json', '*')).toBe('');
+    });
+
+    it('should return empty string on malformed metadata', () => {
+      const tmpDir = makeTempDir();
+      const file = path.join(tmpDir, 'meta.json');
+      fs.writeFileSync(file, 'not json');
+
+      expect(parseBakeDigest(file, '*')).toBe('');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+  });
+
   describe('verifyConditions', () => {
     it('should throw ENOENT when docker is not available', async () => {
       const tmpDir = makeTempDir();
@@ -127,6 +176,56 @@ describe('semantic-release-oci', () => {
 
       await expect(
         verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
+      ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should verify the bake file instead of the Dockerfile in bake mode', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
+      fs.writeFileSync(
+        path.join(tmpDir, 'docker-bake.hcl'),
+        'group "release" {}',
+      );
+
+      await expect(
+        verifyConditions(
+          { dockerBake: { group: 'release' } } as OciPluginConfig,
+          makeContext(tmpDir),
+        ),
+      ).resolves.toBeUndefined();
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should throw EINVAL when bake has neither group nor target', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
+      fs.writeFileSync(
+        path.join(tmpDir, 'docker-bake.hcl'),
+        'group "release" {}',
+      );
+
+      await expect(
+        verifyConditions(
+          { dockerBake: {} } as OciPluginConfig,
+          makeContext(tmpDir),
+        ),
+      ).rejects.toThrow(expect.objectContaining({ code: 'EINVAL' }));
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should throw ENOENT when the bake file does not exist', async () => {
+      const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
+
+      await expect(
+        verifyConditions(
+          { dockerBake: { group: 'release' } } as OciPluginConfig,
+          makeContext(tmpDir),
+        ),
       ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -497,6 +596,45 @@ describe('semantic-release-oci', () => {
 
       const args = execMock.mock.calls[0][0] as string[];
       expect(args).toContain('*.args.VERSION=1.2.3');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should pass a metadata-file to bake for digest capture', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('--metadata-file');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should skip boolean dockerArgs in bake mode', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+          dockerArgs: { FROM_ENV: true },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args.some((a) => a.includes('FROM_ENV'))).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
     });

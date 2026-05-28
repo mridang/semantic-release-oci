@@ -184,10 +184,15 @@ mechanics (`dockerPlatform`, `dockerFile`, `dockerContext`, `dockerNetwork`,
 `dockerNoCache`, `dockerBuildCacheFrom`, `dockerBuildQuiet`,
 `dockerBuildFlags`) are owned by the bake file and not forwarded.
 
+Bake mode requires either `group` or `target` to be set, and verifies that
+the bake file (not a `Dockerfile`) exists during `verifyConditions`.
+
 Push behaviour follows each target's `output` (for example `type=registry`
-to push, `type=local` to export files to the host). In dry-run mode the
-plugin overrides outputs to `type=cacheonly` so the build is validated
-without pushing or writing artifacts.
+to push, `type=local` to export files to the host); `dockerPublish` is not
+consulted in bake mode. In dry-run mode the plugin overrides outputs to
+`type=cacheonly` so the build is validated without pushing or writing
+artifacts. The image digest is read from a bake metadata file and exposed
+via the `docker_image_sha_*` outputs.
 
 ## GitHub Actions Outputs
 
