@@ -57,6 +57,16 @@ describe('OciConfig', () => {
       });
     });
 
+    it('should default imageTarget to the configured target', () => {
+      const config = makeConfig({ dockerBake: { target: 'image' } });
+      expect(config.getDockerBake()).toEqual({
+        file: 'docker-bake.hcl',
+        group: undefined,
+        target: 'image',
+        imageTarget: 'image',
+      });
+    });
+
     it('should use provided bake values over defaults', () => {
       const config = makeConfig({
         dockerBake: {

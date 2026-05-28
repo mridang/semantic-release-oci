@@ -152,7 +152,10 @@ All options are case-sensitive and lowercased in the JSON configuration.
   - **`target` (string, optional):** Bake target to build, used when no
     group is given. Takes precedence over `group` when both are set.
   - **`imageTarget` (string, optional):** Target whose `tags` receive the
-    resolved version tags via `--set`. Default: `"*"` (all targets).
+    resolved version tags via `--set`. Defaults to the configured `target`,
+    or `"*"` (all targets) when only a `group` is given. For a multi-target
+    group, set this to the image target so the version tags are not applied
+    to non-image targets such as binary exports.
 
 ## Environment Variables
 
@@ -173,16 +176,19 @@ build step (via `--push`) rather than tagged and pushed separately.
 
 ## Bake Mode
 
-When `dockerBake` is set, the build step runs `docker buildx bake <group>`
-instead of `docker buildx build`. The plugin renders the configured
-`dockerTags` and injects them into the chosen `imageTarget` via
-`--set <imageTarget>.tags=<repo>:<tag>`, and forwards `dockerArgs` as
-`--set *.args.<key>=<value>`. Everything else about the build — platforms,
-contexts, Dockerfiles, and per-target outputs — is declared in the bake
-file, which is the source of truth in this mode. Options that describe build
-mechanics (`dockerPlatform`, `dockerFile`, `dockerContext`, `dockerNetwork`,
-`dockerNoCache`, `dockerBuildCacheFrom`, `dockerBuildQuiet`,
-`dockerBuildFlags`) are owned by the bake file and not forwarded.
+When `dockerBake` is set, the build step runs `docker buildx bake` against
+the configured `group` or `target` instead of `docker buildx build`. The
+plugin renders the configured `dockerTags` and injects them into the chosen
+`imageTarget` via `--set <imageTarget>.tags=<repo>:<tag>`, and forwards
+string-valued `dockerArgs` as `--set *.args.<key>=<value>`. Boolean
+`dockerArgs` (the env-sourced form) are not supported in bake mode and are
+skipped with a log message; declare them in the bake file instead.
+Everything else about the build — platforms, contexts, Dockerfiles, and
+per-target outputs — is declared in the bake file, which is the source of
+truth in this mode. Options that describe build mechanics (`dockerPlatform`,
+`dockerFile`, `dockerContext`, `dockerNetwork`, `dockerNoCache`,
+`dockerBuildCacheFrom`, `dockerBuildQuiet`, `dockerBuildFlags`) are owned by
+the bake file and not forwarded.
 
 Bake mode requires either `group` or `target` to be set, and verifies that
 the bake file (not a `Dockerfile`) exists during `verifyConditions`.

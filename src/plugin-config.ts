@@ -240,8 +240,10 @@ export class OciConfig {
    * Docker Bake settings. When present, the build step drives
    * `docker buildx bake` instead of `docker buildx build`, so a single
    * bake group can produce several outputs (for example a pushed image
-   * and host-exported binaries) from one shared build. Defaults are
-   * applied for the bake file path and the tag-injection target.
+   * and host-exported binaries) from one shared build. The bake file
+   * path defaults to `docker-bake.hcl`, and the tag-injection target
+   * defaults to the configured `target`, or `*` (all targets) when only
+   * a `group` is given.
    *
    * @returns Normalized bake settings, or `undefined` when not set.
    */
@@ -261,7 +263,7 @@ export class OciConfig {
       file: bake.file ?? 'docker-bake.hcl',
       group: bake.group,
       target: bake.target,
-      imageTarget: bake.imageTarget ?? '*',
+      imageTarget: bake.imageTarget ?? bake.target ?? '*',
     };
   }
 
