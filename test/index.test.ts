@@ -535,8 +535,31 @@ describe('semantic-release-oci', () => {
       expect(args[0]).toBe('buildx');
       expect(args[1]).toBe('bake');
       expect(args).toContain('--file');
-      expect(args).toContain(`image.tags=my-app:1.2.3`);
+      const tagSet = args.find((a) => a.startsWith('image.tags='));
+      expect(tagSet).toContain('my-app:1.2.3');
       expect(args[args.length - 1]).toBe('release');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should join multiple bake tags into a single --set override', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerTags: ['latest', '{{version}}'],
+          dockerBake: { group: 'release', imageTarget: 'image' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      const tagSets = args.filter((a) => a.startsWith('image.tags='));
+      expect(tagSets).toHaveLength(1);
+      expect(tagSets[0]).toBe('image.tags=my-app:latest,my-app:1.2.3');
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -555,7 +578,8 @@ describe('semantic-release-oci', () => {
       );
 
       const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain(`*.tags=my-app:1.2.3`);
+      const tagSet = args.find((a) => a.startsWith('*.tags='));
+      expect(tagSet).toContain('my-app:1.2.3');
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -575,7 +599,7 @@ describe('semantic-release-oci', () => {
 
       const args = execMock.mock.calls[0][0] as string[];
       expect(args).toContain('*.output=type=cacheonly');
-      expect(args).not.toContain('image.tags=my-app:1.2.3');
+      expect(args.some((a) => a.startsWith('image.tags='))).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
     });

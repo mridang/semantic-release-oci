@@ -317,10 +317,9 @@ export async function prepare(
 
     if (isDryRun) {
       args.push('--set', '*.output=type=cacheonly');
-    } else {
-      for (const tag of tags) {
-        args.push('--set', `${bake.imageTarget}.tags=${repo}:${tag}`);
-      }
+    } else if (tags.length > 0) {
+      const tagList = tags.map((tag) => `${repo}:${tag}`).join(',');
+      args.push('--set', `${bake.imageTarget}.tags=${tagList}`);
     }
 
     for (const [key, value] of Object.entries(config.getDockerArgs())) {

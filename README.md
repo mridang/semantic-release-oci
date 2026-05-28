@@ -191,7 +191,11 @@ truth in this mode. Options that describe build mechanics (`dockerPlatform`,
 the bake file and not forwarded.
 
 Bake mode requires either `group` or `target` to be set, and verifies that
-the bake file (not a `Dockerfile`) exists during `verifyConditions`.
+the bake file (not a `Dockerfile`) exists during `verifyConditions`. The
+`imageTarget` must be a target that the selected `group`/`target` actually
+builds; otherwise the tag override is silently ignored by bake. All
+configured `dockerTags` are combined into a single comma-separated override
+(`--set <imageTarget>.tags=a,b,c`) so every tag is applied.
 
 Push behaviour follows each target's `output` (for example `type=registry`
 to push, `type=local` to export files to the host); `dockerPublish` is not
@@ -199,6 +203,9 @@ consulted in bake mode. In dry-run mode the plugin overrides outputs to
 `type=cacheonly` so the build is validated without pushing or writing
 artifacts. The image digest is read from a bake metadata file and exposed
 via the `docker_image_sha_*` outputs.
+
+Bake mode requires Buildx v0.10 or newer (the `--metadata-file` flag for
+`bake` was added in v0.10; shipped with Docker 23.0+).
 
 ## GitHub Actions Outputs
 
