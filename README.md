@@ -193,9 +193,11 @@ the bake file and not forwarded.
 Bake mode requires either `group` or `target` to be set, and verifies that
 the bake file (not a `Dockerfile`) exists during `verifyConditions`. The
 `imageTarget` must be a target that the selected `group`/`target` actually
-builds; otherwise the tag override is silently ignored by bake. All
-configured `dockerTags` are combined into a single comma-separated override
-(`--set <imageTarget>.tags=a,b,c`) so every tag is applied.
+builds; otherwise the tag override is silently ignored by bake. Each
+configured `dockerTag` is applied via its own repeated `--set
+<imageTarget>.tags=<repo>:<tag>` flag, which together replace any tags
+declared in the bake file (buildx rejects a comma-joined value as a single
+malformed tag).
 
 Push behaviour follows each target's `output` (for example `type=registry`
 to push, `type=local` to export files to the host); `dockerPublish` is not

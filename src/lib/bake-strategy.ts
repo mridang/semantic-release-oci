@@ -41,10 +41,12 @@ export function parseBakeDigest(
 
 /**
  * Build strategy that drives `docker buildx bake`. A single bake group
- * or target can produce several outputs from one shared build. Version
- * tags are injected into the configured image target via `--set`, the
- * digest is read from a bake metadata file, and push behaviour is owned
- * by each target's `output` in the bake file (so publish is a no-op).
+ * or target can produce several outputs from one shared build. Each
+ * version tag is injected into the configured image target via its own
+ * repeated `--set <target>.tags=` flag (buildx treats a comma-joined
+ * value as one invalid tag), the digest is read from a bake metadata
+ * file, and push behaviour is owned by each target's `output` in the
+ * bake file (so publish is a no-op).
  */
 export class BakeStrategy extends ImageStrategy {
   /**
@@ -97,15 +99,10 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const tagOverride =
-      tags.length > 0
-        ? [
-            '--set',
-            `${bake.imageTarget}.tags=${tags
-              .map((tag) => `${repo}:${tag}`)
-              .join(',')}`,
-          ]
-        : [];
+    const tagOverride = tags.flatMap((tag) => [
+      '--set',
+      `${bake.imageTarget}.tags=${repo}:${tag}`,
+    ]);
 
     const args: readonly string[] = [
       'buildx',

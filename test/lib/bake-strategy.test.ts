@@ -179,7 +179,7 @@ describe('BakeStrategy', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should join multiple tags into a single --set override', () => {
+    it('should emit one --set tags override per tag', () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
@@ -190,8 +190,10 @@ describe('BakeStrategy', () => {
 
       const args = execMock.mock.calls[0][0] as string[];
       const tagSets = args.filter((a) => a.startsWith('image.tags='));
-      expect(tagSets).toHaveLength(1);
-      expect(tagSets[0]).toBe('image.tags=my-app:latest,my-app:1.2.3');
+      expect(tagSets).toEqual([
+        'image.tags=my-app:latest',
+        'image.tags=my-app:1.2.3',
+      ]);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
