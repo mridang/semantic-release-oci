@@ -2,14 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import SemanticReleaseError from '@semantic-release/error';
-import { OciConfig } from '../plugin-config.js';
-import { commandRunner } from './command-runner.js';
-import { renderTemplate } from './template.js';
-import type {
-  BuildParams,
-  ImageStrategy,
-  SemanticReleaseContext,
-} from './types.js';
+import { ImageStrategy } from './image-strategy.js';
+import type { BuildParams } from './types.js';
 
 /**
  * Reads the digest of the built image from a `docker buildx bake`
@@ -52,12 +46,7 @@ export function parseBakeDigest(
  * digest is read from a bake metadata file, and push behaviour is owned
  * by each target's `output` in the bake file (so publish is a no-op).
  */
-export class BakeStrategy implements ImageStrategy {
-  constructor(
-    private readonly config: OciConfig,
-    private readonly context: SemanticReleaseContext,
-  ) {}
-
+export class BakeStrategy extends ImageStrategy {
   /**
    * Verifies a `group` or `target` is configured and the bake file
    * exists.
@@ -88,11 +77,12 @@ export class BakeStrategy implements ImageStrategy {
    * always cleaned up afterwards.
    *
    * @param params Resolved per-build inputs.
-   * @returns      The captured image digest hex, or an empty string.
+   * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): { sha256: string } {
+  build(params: BuildParams): { sha256: string; tags: string[] } {
     const { config, context } = this;
-    const { repo, tags, vars, buildId, isDryRun } = params;
+    const { repo, tagTemplates, vars, buildId, isDryRun } = params;
+    const tags = this.renderTags(tagTemplates, vars);
     const bake = config.getDockerBake()!;
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
 
@@ -121,7 +111,7 @@ export class BakeStrategy implements ImageStrategy {
       }
       args.push(
         '--set',
-        `*.args.${key}=${renderTemplate(String(value), vars)}`,
+        `*.args.${key}=${this.renderTemplate(String(value), vars)}`,
       );
     }
 
@@ -132,17 +122,16 @@ export class BakeStrategy implements ImageStrategy {
 
     let sha256 = '';
     try {
-      commandRunner.exec(
-        args,
-        { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
-        context.logger,
-      );
+      this.exec(args, {
+        stdio: 'pipe',
+        timeout: config.getDockerTimeout(),
+      });
       sha256 = parseBakeDigest(metadataFile, bake.imageTarget);
     } finally {
       fs.rmSync(metadataFile, { force: true });
     }
 
-    return { sha256 };
+    return { sha256, tags };
   }
 
   /**

@@ -1,15 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import SemanticReleaseError from '@semantic-release/error';
-import { OciConfig } from '../plugin-config.js';
-import { commandRunner } from './command-runner.js';
-import { renderTemplate } from './template.js';
-import type {
-  BuildParams,
-  BuildState,
-  ImageStrategy,
-  SemanticReleaseContext,
-} from './types.js';
+import { ImageStrategy } from './image-strategy.js';
+import type { BuildParams, BuildState } from './types.js';
 
 const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
 
@@ -19,12 +12,7 @@ const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
  * image digest is scraped from the build output, and (for non-buildx
  * builds) tagging, pushing, and cleanup happen at publish time.
  */
-export class BuildStrategy implements ImageStrategy {
-  constructor(
-    private readonly config: OciConfig,
-    private readonly context: SemanticReleaseContext,
-  ) {}
-
+export class BuildStrategy extends ImageStrategy {
   /**
    * Verifies the configured Dockerfile exists.
    *
@@ -48,11 +36,12 @@ export class BuildStrategy implements ImageStrategy {
    * Builds the image and scrapes the digest from the build output.
    *
    * @param params Resolved per-build inputs.
-   * @returns      The captured image digest hex, or an empty string.
+   * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): { sha256: string } {
+  build(params: BuildParams): { sha256: string; tags: string[] } {
     const { config, context } = this;
-    const { repo, tags, vars, buildId, isDryRun } = params;
+    const { repo, tagTemplates, vars, buildId, isDryRun } = params;
+    const tags = this.renderTags(tagTemplates, vars);
     const isBuildx = config.isBuildxEnabled();
 
     const args: string[] = [];
@@ -96,7 +85,7 @@ export class BuildStrategy implements ImageStrategy {
       } else {
         args.push(
           '--build-arg',
-          `${key}=${renderTemplate(String(value), vars)}`,
+          `${key}=${this.renderTemplate(String(value), vars)}`,
         );
       }
     }
@@ -126,11 +115,10 @@ export class BuildStrategy implements ImageStrategy {
     args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
     args.push(path.resolve(context.cwd, config.getDockerContext()));
 
-    const stdout = commandRunner.exec(
-      args,
-      { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
-      context.logger,
-    );
+    const stdout = this.exec(args, {
+      stdio: 'pipe',
+      timeout: config.getDockerTimeout(),
+    });
 
     const sha256 =
       stdout
@@ -141,7 +129,7 @@ export class BuildStrategy implements ImageStrategy {
           undefined,
         ) ?? '';
 
-    return { sha256 };
+    return { sha256, tags };
   }
 
   /**
@@ -156,38 +144,26 @@ export class BuildStrategy implements ImageStrategy {
 
     if (!state.isBuildx && config.isPublishEnabled()) {
       for (const tag of state.tags) {
-        commandRunner.exec(
+        this.exec(
           ['tag', `${state.repo}:${state.buildId}`, `${state.repo}:${tag}`],
-          { cwd: context.cwd, timeout: config.getDockerTimeout() },
-          context.logger,
+          { timeout: config.getDockerTimeout() },
         );
-        commandRunner.exec(
-          ['push', `${state.repo}:${tag}`],
-          {
-            cwd: context.cwd,
-            stdio: 'inherit',
-            timeout: config.getDockerTimeout(),
-          },
-          context.logger,
-        );
+        this.exec(['push', `${state.repo}:${tag}`], {
+          stdio: 'inherit',
+          timeout: config.getDockerTimeout(),
+        });
       }
     }
 
     if (config.isAutoCleanEnabled() && !state.isBuildx) {
       try {
-        const images = commandRunner
-          .exec(
-            ['images', state.repo, '-q'],
-            { cwd: context.cwd, timeout: config.getDockerTimeout() },
-            context.logger,
-          )
-          .trim();
+        const images = this.exec(['images', state.repo, '-q'], {
+          timeout: config.getDockerTimeout(),
+        }).trim();
         if (images) {
-          commandRunner.exec(
-            ['rmi', '-f', ...images.split('\n')],
-            { cwd: context.cwd, timeout: config.getDockerTimeout() },
-            context.logger,
-          );
+          this.exec(['rmi', '-f', ...images.split('\n')], {
+            timeout: config.getDockerTimeout(),
+          });
         }
       } catch {
         context.logger.log('Image cleanup failed. Continuing.');

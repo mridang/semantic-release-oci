@@ -1,7 +1,8 @@
 import { OciConfig } from '../plugin-config.js';
 import { BuildStrategy } from './build-strategy.js';
 import { BakeStrategy } from './bake-strategy.js';
-import type { ImageStrategy, SemanticReleaseContext } from './types.js';
+import { ImageStrategy } from './image-strategy.js';
+import type { SemanticReleaseContext } from './types.js';
 
 /**
  * Selects the build strategy for the given configuration: bake mode when

@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { BakeStrategy, parseBakeDigest } from '../../src/lib/bake-strategy.js';
-import { commandRunner } from '../../src/lib/command-runner.js';
+import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type {
   BuildParams,
@@ -53,7 +53,7 @@ function makeStrategy(
 
 const baseParams: BuildParams = {
   repo: 'my-app',
-  tags: ['1.2.3'],
+  tagTemplates: ['1.2.3'],
   vars: { version: '1.2.3' },
   buildId: 'abc123def456abc1',
   isDryRun: false,
@@ -108,17 +108,14 @@ describe('parseBakeDigest', () => {
 });
 
 describe('BakeStrategy', () => {
-  let originalExec: typeof commandRunner.exec;
-  let execMock: jest.Mock<typeof commandRunner.exec>;
+  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
 
   beforeEach(() => {
-    originalExec = commandRunner.exec;
-    execMock = jest.fn<typeof commandRunner.exec>().mockReturnValue('');
-    commandRunner.exec = execMock;
+    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
   });
 
   afterEach(() => {
-    commandRunner.exec = originalExec;
+    execMock.mockRestore();
   });
 
   describe('verifyTarget', () => {
@@ -189,7 +186,7 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      strategy.build({ ...baseParams, tags: ['latest', '1.2.3'] });
+      strategy.build({ ...baseParams, tagTemplates: ['latest', '1.2.3'] });
 
       const args = execMock.mock.calls[0][0] as string[];
       const tagSets = args.filter((a) => a.startsWith('image.tags='));
@@ -295,9 +292,10 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      const { sha256 } = strategy.build(baseParams);
+      const { sha256, tags } = strategy.build(baseParams);
 
       expect(sha256).toBe('abc123');
+      expect(tags).toEqual(['1.2.3']);
 
       fs.rmSync(tmpDir, { recursive: true });
     });

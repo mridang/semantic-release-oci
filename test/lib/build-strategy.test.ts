@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
-import { commandRunner } from '../../src/lib/command-runner.js';
+import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type {
   BuildParams,
@@ -52,24 +52,21 @@ function makeStrategy(
 
 const baseParams: BuildParams = {
   repo: 'my-app',
-  tags: ['latest', '1-latest', '1.2.3'],
+  tagTemplates: ['latest', '1-latest', '1.2.3'],
   vars: { version: '1.2.3' },
   buildId: 'abc123def456abc1',
   isDryRun: false,
 };
 
 describe('BuildStrategy', () => {
-  let originalExec: typeof commandRunner.exec;
-  let execMock: jest.Mock<typeof commandRunner.exec>;
+  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
 
   beforeEach(() => {
-    originalExec = commandRunner.exec;
-    execMock = jest.fn<typeof commandRunner.exec>().mockReturnValue('');
-    commandRunner.exec = execMock;
+    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
   });
 
   afterEach(() => {
-    commandRunner.exec = originalExec;
+    execMock.mockRestore();
   });
 
   describe('verifyTarget', () => {
@@ -241,7 +238,7 @@ describe('BuildStrategy', () => {
 
       strategy.build({
         ...baseParams,
-        tags: ['1.2.3', 'latest'],
+        tagTemplates: ['1.2.3', 'latest'],
         isDryRun: true,
       });
 
@@ -445,7 +442,6 @@ describe('BuildStrategy', () => {
       expect(execMock).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ timeout: 1_800_000 }),
-        expect.anything(),
       );
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -522,7 +518,7 @@ describe('BuildStrategy', () => {
       writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
-      strategy.build({ ...baseParams, tags: [] });
+      strategy.build({ ...baseParams, tagTemplates: [] });
 
       const args = execMock.mock.calls[0][0] as string[];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
@@ -536,7 +532,7 @@ describe('BuildStrategy', () => {
       writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {});
 
-      strategy.build({ ...baseParams, repo: '', tags: ['latest'] });
+      strategy.build({ ...baseParams, repo: '', tagTemplates: ['latest'] });
 
       const args = execMock.mock.calls[0][0] as string[];
       expect(args.some((a) => a === ':latest')).toBe(true);
@@ -552,9 +548,10 @@ describe('BuildStrategy', () => {
       );
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
-      const { sha256 } = strategy.build(baseParams);
+      const { sha256, tags } = strategy.build(baseParams);
 
       expect(sha256).toBe('abcdef1234567890abcdef1234567890');
+      expect(tags).toEqual(['latest', '1-latest', '1.2.3']);
 
       fs.rmSync(tmpDir, { recursive: true });
     });

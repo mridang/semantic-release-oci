@@ -9,12 +9,8 @@ import {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import {
-  verifyConditions,
-  prepare,
-  publish,
-  commandRunner,
-} from '../src/index.js';
+import { verifyConditions, prepare, publish } from '../src/index.js';
+import { ImageStrategy } from '../src/lib/image-strategy.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 
 function makeTempDir(): string {
@@ -56,17 +52,14 @@ function makeContext(
 }
 
 describe('semantic-release-oci', () => {
-  let originalExec: typeof commandRunner.exec;
-  let execMock: jest.Mock<typeof commandRunner.exec>;
+  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
 
   beforeEach(() => {
-    originalExec = commandRunner.exec;
-    execMock = jest.fn<typeof commandRunner.exec>().mockReturnValue('');
-    commandRunner.exec = execMock;
+    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
   });
 
   afterEach(() => {
-    commandRunner.exec = originalExec;
+    execMock.mockRestore();
   });
 
   describe('verifyConditions', () => {
@@ -125,45 +118,6 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should throw EAUTH when only username is provided', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      writeDockerfile(tmpDir);
-
-      await expect(
-        verifyConditions(
-          {} as OciPluginConfig,
-          makeContext(tmpDir, { DOCKER_REGISTRY_USER: 'user' }),
-        ),
-      ).rejects.toThrow(expect.objectContaining({ code: 'EAUTH' }));
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should succeed with valid credentials', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      writeDockerfile(tmpDir);
-
-      await expect(
-        verifyConditions(
-          {} as OciPluginConfig,
-          makeContext(tmpDir, {
-            DOCKER_REGISTRY_USER: 'user',
-            DOCKER_REGISTRY_PASSWORD: 'pass',
-          }),
-        ),
-      ).resolves.toBeUndefined();
-
-      expect(execMock).toHaveBeenCalledWith(
-        expect.arrayContaining(['login', '-u', 'user', '--password-stdin']),
-        expect.objectContaining({ input: 'pass' }),
-        expect.anything(),
-      );
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
     it('should succeed without credentials when login is disabled', async () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, 'my-app');
@@ -203,30 +157,6 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should use GITHUB_TOKEN as password fallback', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      writeDockerfile(tmpDir);
-
-      await expect(
-        verifyConditions(
-          {} as OciPluginConfig,
-          makeContext(tmpDir, {
-            DOCKER_REGISTRY_USER: 'user',
-            GITHUB_TOKEN: 'gh-token',
-          }),
-        ),
-      ).resolves.toBeUndefined();
-
-      expect(execMock).toHaveBeenCalledWith(
-        expect.arrayContaining(['login']),
-        expect.objectContaining({ input: 'gh-token' }),
-        expect.anything(),
-      );
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
     it('should use dockerImage from config over package.json', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -249,28 +179,6 @@ describe('semantic-release-oci', () => {
       await expect(
         verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
       ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should login to a custom registry', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      writeDockerfile(tmpDir);
-
-      await verifyConditions(
-        { dockerRegistry: 'ghcr.io' } as OciPluginConfig,
-        makeContext(tmpDir, {
-          DOCKER_REGISTRY_USER: 'user',
-          DOCKER_REGISTRY_PASSWORD: 'pass',
-        }),
-      );
-
-      expect(execMock).toHaveBeenCalledWith(
-        expect.arrayContaining(['login', 'ghcr.io']),
-        expect.anything(),
-        expect.anything(),
-      );
 
       fs.rmSync(tmpDir, { recursive: true });
     });

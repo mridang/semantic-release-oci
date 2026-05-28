@@ -51,34 +51,8 @@ export interface BuildState {
  */
 export interface BuildParams {
   readonly repo: string;
-  readonly tags: readonly string[];
+  readonly tagTemplates: readonly string[];
   readonly vars: Record<string, string | number | undefined>;
   readonly buildId: string;
   readonly isDryRun: boolean;
-}
-
-/**
- * A build mechanism (plain/buildx `docker build`, or `docker buildx
- * bake`). Each strategy owns how it validates preconditions, constructs
- * and runs its build command (capturing the image digest), and what it
- * must do at publish time.
- */
-export interface ImageStrategy {
-  /**
-   * Validates strategy preconditions (required files and config) and
-   * returns a short label describing what was verified, for logging.
-   */
-  verifyTarget(): string;
-
-  /**
-   * Runs the build and returns the captured image digest hex (or an
-   * empty string when it cannot be determined).
-   */
-  build(params: BuildParams): { sha256: string };
-
-  /**
-   * Performs any tag/push/cleanup that must happen during publish. No-op
-   * for strategies that push during the build step.
-   */
-  finalizePublish(state: BuildState): void;
 }

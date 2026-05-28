@@ -2,14 +2,9 @@ import crypto from 'crypto';
 import * as actions from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import { OciConfig, OciPluginConfig } from './plugin-config.js';
-import { commandRunner } from './lib/command-runner.js';
-import { renderTemplate } from './lib/template.js';
 import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
 import { selectStrategy } from './lib/strategy.js';
 import type { BuildState, SemanticReleaseContext } from './lib/types.js';
-
-export { renderTemplate } from './lib/template.js';
-export { commandRunner } from './lib/command-runner.js';
 
 const buildStates = new Map<string, BuildState>();
 
@@ -26,19 +21,9 @@ export async function verifyConditions(
   context: SemanticReleaseContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
+  const strategy = selectStrategy(config, context);
 
-  try {
-    commandRunner.exec(
-      ['version'],
-      { cwd: context.cwd, timeout: config.getDockerTimeout() },
-      context.logger,
-    );
-  } catch {
-    throw new SemanticReleaseError(
-      'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
-      'ENOENT',
-    );
-  }
+  strategy.verifyDocker();
 
   const pkg = readPkg(context.cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
@@ -51,34 +36,9 @@ export async function verifyConditions(
     );
   }
 
-  const verifiedTarget = selectStrategy(config, context).verifyTarget();
+  const verifiedTarget = strategy.verifyTarget();
 
-  if (config.isLoginEnabled() && config.hasCredentials()) {
-    if (!config.hasCompleteCredentials()) {
-      throw new SemanticReleaseError(
-        'Docker login requires both DOCKER_REGISTRY_USER and DOCKER_REGISTRY_PASSWORD (or GITHUB_TOKEN) environment variables.',
-        'EAUTH',
-      );
-    }
-
-    const loginArgs = ['login'];
-    const registry = config.getDockerRegistry();
-    if (registry) loginArgs.push(registry);
-    loginArgs.push('-u', config.getRegistryUser()!);
-    loginArgs.push('--password-stdin');
-
-    commandRunner.exec(
-      loginArgs,
-      {
-        cwd: context.cwd,
-        input: config.getRegistryPassword(),
-        timeout: config.getDockerTimeout(),
-      },
-      context.logger,
-    );
-
-    context.logger.log('Docker login successful.');
-  }
+  strategy.login();
 
   context.logger.log(`Verified: image="${imageName}", ${verifiedTarget}`);
 }
@@ -117,17 +77,12 @@ export async function prepare(
     now: new Date().toISOString(),
   };
 
-  const tags = config
-    .getDockerTags()
-    .map((t) => renderTemplate(t, vars))
-    .filter(Boolean);
-
   const buildId = crypto.randomBytes(10).toString('hex');
   const isBuildx = config.isBakeEnabled() || config.isBuildxEnabled();
 
-  const { sha256 } = selectStrategy(config, context).build({
+  const { sha256, tags } = selectStrategy(config, context).build({
     repo,
-    tags,
+    tagTemplates: config.getDockerTags(),
     vars,
     buildId,
     isDryRun,
