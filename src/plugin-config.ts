@@ -89,28 +89,28 @@ export class OciConfig {
    * Tag templates applied to the built image. Supports `{{variable}}`
    * placeholders resolved at build time.
    *
-   * @returns Array of tag template strings.
+   * @returns A fresh array of tag template strings (never the caller's
+   *          own array).
    */
-  getDockerTags(): string[] {
+  getDockerTags(): readonly string[] {
     const tags = this.config.dockerTags ?? [
       'latest',
       '{{major}}-latest',
       '{{version}}',
     ];
-    if (typeof tags === 'string') {
-      return tags.split(/\s*,\s*/);
-    }
-    return tags;
+    return typeof tags === 'string'
+      ? tags.split(/\s*,\s*/).filter(Boolean)
+      : [...tags];
   }
 
   /**
    * Build arguments passed via `--build-arg`. String values support
    * template rendering; boolean `true` passes the key without a value.
    *
-   * @returns Key-value map of build arguments.
+   * @returns A shallow copy of the build-argument map.
    */
-  getDockerArgs(): Record<string, string | boolean> {
-    return this.config.dockerArgs ?? {};
+  getDockerArgs(): Readonly<Record<string, string | boolean>> {
+    return { ...(this.config.dockerArgs ?? {}) };
   }
 
   /**
@@ -118,23 +118,22 @@ export class OciConfig {
    * normalized to `--kebab-case`. A `null` value emits the flag
    * without an argument.
    *
-   * @returns Key-value map of build flags.
+   * @returns A shallow copy of the build-flag map.
    */
-  getDockerBuildFlags(): Record<string, string | string[] | null> {
-    return this.config.dockerBuildFlags ?? {};
+  getDockerBuildFlags(): Readonly<Record<string, string | string[] | null>> {
+    return { ...(this.config.dockerBuildFlags ?? {}) };
   }
 
   /**
    * Target platforms for multi-architecture builds via `docker buildx`.
    *
-   * @returns Array of platform strings such as `"linux/amd64"`.
+   * @returns A fresh array of platform strings such as `"linux/amd64"`.
    */
-  getDockerPlatform(): string[] {
+  getDockerPlatform(): readonly string[] {
     const platform = this.config.dockerPlatform ?? [];
-    if (typeof platform === 'string') {
-      return platform.split(/\s*,\s*/);
-    }
-    return platform;
+    return typeof platform === 'string'
+      ? platform.split(/\s*,\s*/).filter(Boolean)
+      : [...platform];
   }
 
   /**
@@ -206,15 +205,14 @@ export class OciConfig {
   /**
    * Cache sources passed via `--cache-from` to `docker build`.
    *
-   * @returns Array of cache source strings.
+   * @returns A fresh array of cache source strings.
    */
-  getDockerBuildCacheFrom(): string[] {
+  getDockerBuildCacheFrom(): readonly string[] {
     const cacheFrom = this.config.dockerBuildCacheFrom;
     if (!cacheFrom) return [];
-    if (typeof cacheFrom === 'string') {
-      return cacheFrom.split(/\s*,\s*/);
-    }
-    return cacheFrom;
+    return typeof cacheFrom === 'string'
+      ? cacheFrom.split(/\s*,\s*/).filter(Boolean)
+      : [...cacheFrom];
   }
 
   /**

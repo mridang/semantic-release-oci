@@ -19,15 +19,21 @@ export function parsePkgName(pkgname: string): {
 }
 
 /**
- * Reads `package.json` from the given directory, if present.
+ * Reads `package.json` from the given directory, if present. A missing
+ * or malformed file resolves to `null` rather than throwing, so callers
+ * fall back to explicit config (e.g. `dockerImage`).
  *
  * @param cwd Directory to read `package.json` from.
- * @returns   The parsed package, or `null` when no file exists.
+ * @returns   The parsed package, or `null` when absent or unparseable.
  */
 export function readPkg(cwd: string): { name?: string } | null {
   const pkgPath = path.join(cwd, 'package.json');
   if (!fs.existsSync(pkgPath)) return null;
-  return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { name?: string };
+  try {
+    return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { name?: string };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -45,6 +45,15 @@ describe('readPkg', () => {
 
     fs.rmSync(tmpDir, { recursive: true });
   });
+
+  it('should return null when package.json is malformed', () => {
+    const tmpDir = makeTempDir();
+    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ not valid json');
+
+    expect(readPkg(tmpDir)).toBeNull();
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
 });
 
 describe('buildImageRepo', () => {

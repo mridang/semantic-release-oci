@@ -184,6 +184,41 @@ describe('OciConfig', () => {
     });
   });
 
+  describe('immutability', () => {
+    it('should return a fresh tags array, not the config array', () => {
+      const original = ['a', 'b'];
+      const config = makeConfig({ dockerTags: original });
+
+      expect(config.getDockerTags()).not.toBe(original);
+      expect(config.getDockerTags()).toEqual(['a', 'b']);
+    });
+
+    it('should return a fresh platform array, not the config array', () => {
+      const original = ['linux/amd64'];
+      const config = makeConfig({ dockerPlatform: original });
+
+      expect(config.getDockerPlatform()).not.toBe(original);
+    });
+
+    it('should return a copy of dockerArgs, not the config object', () => {
+      const original = { A: '1' };
+      const config = makeConfig({ dockerArgs: original });
+
+      expect(config.getDockerArgs()).not.toBe(original);
+      expect(config.getDockerArgs()).toEqual({ A: '1' });
+    });
+
+    it('should drop empty entries from comma-split values', () => {
+      expect(makeConfig({ dockerTags: 'a,,b,' }).getDockerTags()).toEqual([
+        'a',
+        'b',
+      ]);
+      expect(
+        makeConfig({ dockerPlatform: 'linux/amd64,' }).getDockerPlatform(),
+      ).toEqual(['linux/amd64']);
+    });
+  });
+
   describe('credentials', () => {
     it('should detect credentials from env', () => {
       const config = makeConfig(
