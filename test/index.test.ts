@@ -714,6 +714,35 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should remove the bake metadata file even when the build fails', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      let metadataPath = '';
+      execMock.mockImplementation((args: string[]): string => {
+        const idx = args.indexOf('--metadata-file');
+        if (idx >= 0) {
+          metadataPath = args[idx + 1];
+          fs.writeFileSync(metadataPath, '{}');
+        }
+        throw new Error('build failed');
+      });
+
+      await expect(
+        prepare(
+          {
+            dockerImage: 'my-app',
+            dockerBake: { group: 'release' },
+          } as OciPluginConfig,
+          makeContext(tmpDir),
+        ),
+      ).rejects.toThrow('build failed');
+
+      expect(metadataPath).not.toBe('');
+      expect(fs.existsSync(metadataPath)).toBe(false);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should skip version tags in dry-run mode for standard builds', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);

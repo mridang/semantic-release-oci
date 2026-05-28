@@ -410,17 +410,24 @@ export async function prepare(
     args.push(path.resolve(context.cwd, config.getDockerContext()));
   }
 
-  const stdout = commandRunner.exec(
-    args,
-    { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
-    context.logger,
-  );
+  let stdout = '';
+  let sha256 = '';
+  try {
+    stdout = commandRunner.exec(
+      args,
+      { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
+      context.logger,
+    );
+    if (bake) {
+      sha256 = parseBakeDigest(bakeMetadataFile, bake.imageTarget);
+    }
+  } finally {
+    if (bake) {
+      fs.rmSync(bakeMetadataFile, { force: true });
+    }
+  }
 
-  let sha256: string;
-  if (bake) {
-    sha256 = parseBakeDigest(bakeMetadataFile, bake.imageTarget);
-    fs.rmSync(bakeMetadataFile, { force: true });
-  } else {
+  if (!bake) {
     sha256 =
       stdout
         .split('\n')
