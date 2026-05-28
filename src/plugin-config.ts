@@ -23,6 +23,12 @@ export interface OciPluginConfig extends Config {
   readonly dockerNoCache?: boolean;
   readonly dockerBuildCacheFrom?: string | string[];
   readonly dockerTimeout?: number;
+  readonly dockerBake?: {
+    readonly file?: string;
+    readonly group?: string;
+    readonly target?: string;
+    readonly imageTarget?: string;
+  };
 }
 
 /**
@@ -228,6 +234,44 @@ export class OciConfig {
    */
   isBuildxEnabled(): boolean {
     return this.getDockerPlatform().length > 0;
+  }
+
+  /**
+   * Docker Bake settings. When present, the build step drives
+   * `docker buildx bake` instead of `docker buildx build`, so a single
+   * bake group can produce several outputs (for example a pushed image
+   * and host-exported binaries) from one shared build. Defaults are
+   * applied for the bake file path and the tag-injection target.
+   *
+   * @returns Normalized bake settings, or `undefined` when not set.
+   */
+  getDockerBake():
+    | {
+        readonly file: string;
+        readonly group: string | undefined;
+        readonly target: string | undefined;
+        readonly imageTarget: string;
+      }
+    | undefined {
+    const bake = this.config.dockerBake;
+    if (!bake) {
+      return undefined;
+    }
+    return {
+      file: bake.file ?? 'docker-bake.hcl',
+      group: bake.group,
+      target: bake.target,
+      imageTarget: bake.imageTarget ?? '*',
+    };
+  }
+
+  /**
+   * Whether Docker Bake mode is enabled via the `dockerBake` option.
+   *
+   * @returns `true` when bake settings are present.
+   */
+  isBakeEnabled(): boolean {
+    return this.config.dockerBake !== undefined;
   }
 
   /**

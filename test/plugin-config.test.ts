@@ -34,6 +34,44 @@ describe('OciConfig', () => {
       expect(config.getDockerBuildCacheFrom()).toEqual([]);
       expect(config.isBuildxEnabled()).toBe(false);
       expect(config.getDockerTimeout()).toBe(600_000);
+      expect(config.getDockerBake()).toBeUndefined();
+      expect(config.isBakeEnabled()).toBe(false);
+    });
+  });
+
+  describe('bake', () => {
+    it('should report bake disabled when not configured', () => {
+      const config = makeConfig();
+      expect(config.isBakeEnabled()).toBe(false);
+      expect(config.getDockerBake()).toBeUndefined();
+    });
+
+    it('should apply defaults when bake is configured empty', () => {
+      const config = makeConfig({ dockerBake: {} });
+      expect(config.isBakeEnabled()).toBe(true);
+      expect(config.getDockerBake()).toEqual({
+        file: 'docker-bake.hcl',
+        group: undefined,
+        target: undefined,
+        imageTarget: '*',
+      });
+    });
+
+    it('should use provided bake values over defaults', () => {
+      const config = makeConfig({
+        dockerBake: {
+          file: 'build/bake.hcl',
+          group: 'release',
+          target: undefined,
+          imageTarget: 'image',
+        },
+      });
+      expect(config.getDockerBake()).toEqual({
+        file: 'build/bake.hcl',
+        group: 'release',
+        target: undefined,
+        imageTarget: 'image',
+      });
     });
   });
 

@@ -419,6 +419,88 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should drive buildx bake when dockerBake is set', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release', imageTarget: 'image' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args[0]).toBe('buildx');
+      expect(args[1]).toBe('bake');
+      expect(args).toContain('--file');
+      expect(args).toContain(`image.tags=my-app:1.2.3`);
+      expect(args[args.length - 1]).toBe('release');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should scope bake tags to the wildcard target by default', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain(`*.tags=my-app:1.2.3`);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should use cacheonly output and no tags in bake dry-run mode', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release', imageTarget: 'image' },
+        } as OciPluginConfig,
+        makeContext(tmpDir, {}, { options: { dryRun: true } }),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('*.output=type=cacheonly');
+      expect(args).not.toContain('image.tags=my-app:1.2.3');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should forward dockerArgs as bake --set args', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+          dockerArgs: { VERSION: '{{version}}' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args).toContain('*.args.VERSION=1.2.3');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should skip version tags in dry-run mode for standard builds', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);

@@ -141,6 +141,19 @@ All options are case-sensitive and lowercased in the JSON configuration.
   (build, push, login, tag, and cleanup). Default: `600000` (10 minutes).
   Increase this when building large images or pushing to slow registries.
 
+- **`dockerBake` (object, optional):**
+  Drives `docker buildx bake` instead of `docker buildx build`, so a single
+  bake group can produce several outputs (for example a pushed image and
+  host-exported binaries) from one shared compile. See "Bake Mode" below.
+  Fields:
+  - **`file` (string, optional):** Path to the bake definition file.
+    Default: `"docker-bake.hcl"`.
+  - **`group` (string, optional):** Bake group to build.
+  - **`target` (string, optional):** Bake target to build, used when no
+    group is given. Takes precedence over `group` when both are set.
+  - **`imageTarget` (string, optional):** Target whose `tags` receive the
+    resolved version tags via `--set`. Default: `"*"` (all targets).
+
 ## Environment Variables
 
 When `dockerLogin` is enabled (the default), the plugin reads credentials
@@ -157,6 +170,24 @@ When `dockerPlatform` is configured with one or more platforms (e.g.,
 `['linux/amd64', 'linux/arm64']`), the plugin uses `docker buildx build`
 instead of `docker build`. In buildx mode, images are pushed during the
 build step (via `--push`) rather than tagged and pushed separately.
+
+## Bake Mode
+
+When `dockerBake` is set, the build step runs `docker buildx bake <group>`
+instead of `docker buildx build`. The plugin renders the configured
+`dockerTags` and injects them into the chosen `imageTarget` via
+`--set <imageTarget>.tags=<repo>:<tag>`, and forwards `dockerArgs` as
+`--set *.args.<key>=<value>`. Everything else about the build — platforms,
+contexts, Dockerfiles, and per-target outputs — is declared in the bake
+file, which is the source of truth in this mode. Options that describe build
+mechanics (`dockerPlatform`, `dockerFile`, `dockerContext`, `dockerNetwork`,
+`dockerNoCache`, `dockerBuildCacheFrom`, `dockerBuildQuiet`,
+`dockerBuildFlags`) are owned by the bake file and not forwarded.
+
+Push behaviour follows each target's `output` (for example `type=registry`
+to push, `type=local` to export files to the host). In dry-run mode the
+plugin overrides outputs to `type=cacheonly` so the build is validated
+without pushing or writing artifacts.
 
 ## GitHub Actions Outputs
 

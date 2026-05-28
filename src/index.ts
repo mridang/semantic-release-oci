@@ -245,73 +245,105 @@ export async function prepare(
     .filter(Boolean);
 
   const buildId = crypto.randomBytes(10).toString('hex');
-  const isBuildx = config.isBuildxEnabled();
+  const bake = config.getDockerBake();
+  const isBuildx = bake !== undefined || config.isBuildxEnabled();
 
   const args: string[] = [];
 
-  if (isBuildx) {
-    args.push('buildx', 'build');
-  } else {
-    args.push('build');
-  }
+  if (bake) {
+    args.push('buildx', 'bake', '--file', path.resolve(context.cwd, bake.file));
 
-  const network = config.getDockerNetwork();
-  if (network) {
-    args.push(`--network=${network}`);
-  }
-
-  if (!isBuildx) {
-    args.push('--tag', `${repo}:${buildId}`);
-  }
-
-  if (!isDryRun) {
-    for (const tag of tags) {
-      args.push('--tag', `${repo}:${tag}`);
-    }
-  }
-
-  if (config.isBuildQuiet()) {
-    args.push('--quiet');
-  }
-
-  if (config.isNoCacheEnabled()) {
-    args.push('--no-cache');
-  }
-
-  for (const source of config.getDockerBuildCacheFrom()) {
-    args.push('--cache-from', source);
-  }
-
-  const dockerArgs = config.getDockerArgs();
-  for (const [key, value] of Object.entries(dockerArgs)) {
-    if (value === true) {
-      args.push('--build-arg', key);
+    if (isDryRun) {
+      args.push('--set', '*.output=type=cacheonly');
     } else {
-      args.push('--build-arg', `${key}=${renderTemplate(String(value), vars)}`);
+      for (const tag of tags) {
+        args.push('--set', `${bake.imageTarget}.tags=${repo}:${tag}`);
+      }
     }
-  }
 
-  const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
-    ([key, value]): string[] => {
-      const flag = key.startsWith('-')
-        ? key
-        : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
-      if (value === null) return [flag];
-      return (Array.isArray(value) ? value : [value]).flatMap((v) => [flag, v]);
-    },
-  );
-  args.push(...extraFlags);
-
-  if (isBuildx) {
-    args.push('--platform', config.getDockerPlatform().join(','));
-    args.push('--pull');
-    if (config.isPublishEnabled() && !isDryRun) {
-      args.push('--push');
+    for (const [key, value] of Object.entries(config.getDockerArgs())) {
+      if (value !== true) {
+        args.push(
+          '--set',
+          `*.args.${key}=${renderTemplate(String(value), vars)}`,
+        );
+      }
     }
-  }
 
-  args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
-  args.push(path.resolve(context.cwd, config.getDockerContext()));
+    const selector = bake.target ?? bake.group;
+    if (selector) {
+      args.push(selector);
+    }
+  } else {
+    if (isBuildx) {
+      args.push('buildx', 'build');
+    } else {
+      args.push('build');
+    }
+
+    const network = config.getDockerNetwork();
+    if (network) {
+      args.push(`--network=${network}`);
+    }
+
+    if (!isBuildx) {
+      args.push('--tag', `${repo}:${buildId}`);
+    }
+
+    if (!isDryRun) {
+      for (const tag of tags) {
+        args.push('--tag', `${repo}:${tag}`);
+      }
+    }
+
+    if (config.isBuildQuiet()) {
+      args.push('--quiet');
+    }
+
+    if (config.isNoCacheEnabled()) {
+      args.push('--no-cache');
+    }
+
+    for (const source of config.getDockerBuildCacheFrom()) {
+      args.push('--cache-from', source);
+    }
+
+    for (const [key, value] of Object.entries(config.getDockerArgs())) {
+      if (value === true) {
+        args.push('--build-arg', key);
+      } else {
+        args.push(
+          '--build-arg',
+          `${key}=${renderTemplate(String(value), vars)}`,
+        );
+      }
+    }
+
+    const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
+      ([key, value]): string[] => {
+        const flag = key.startsWith('-')
+          ? key
+          : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
+        if (value === null) return [flag];
+        return (Array.isArray(value) ? value : [value]).flatMap((v) => [
+          flag,
+          v,
+        ]);
+      },
+    );
+    args.push(...extraFlags);
+
+    if (isBuildx) {
+      args.push('--platform', config.getDockerPlatform().join(','));
+      args.push('--pull');
+      if (config.isPublishEnabled() && !isDryRun) {
+        args.push('--push');
+      }
+    }
+
+    args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
+    args.push(path.resolve(context.cwd, config.getDockerContext()));
+  }
 
   const stdout = commandRunner.exec(
     args,
