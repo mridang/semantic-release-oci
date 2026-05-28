@@ -1,170 +1,22 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import crypto from 'crypto';
-import { execSync } from 'child_process';
 import * as actions from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import { OciConfig, OciPluginConfig } from './plugin-config.js';
+import { commandRunner } from './lib/command-runner.js';
+import { renderTemplate } from './lib/template.js';
+import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
+import { selectStrategy } from './lib/strategy.js';
+import type { BuildState, SemanticReleaseContext } from './lib/types.js';
 
-const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
-const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
-
-/**
- * Internal state tracked for each built Docker image across the
- * prepare and publish lifecycle hooks.
- */
-interface BuildState {
-  readonly sha: string;
-  readonly sha256: string;
-  readonly buildId: string;
-  readonly tags: readonly string[];
-  readonly repo: string;
-  readonly isBuildx: boolean;
-}
-
-/**
- * Simplified semantic-release context consumed by the plugin
- * lifecycle hooks. Only the fields used by this plugin are typed.
- */
-interface SemanticReleaseContext {
-  readonly cwd: string;
-  readonly env: Record<string, string | undefined>;
-  readonly logger: {
-    log: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
-  readonly nextRelease?: {
-    readonly version?: string;
-    readonly gitTag?: string;
-    readonly gitHead?: string;
-    readonly channel?: string;
-    readonly type?: string;
-  };
-  readonly lastRelease?: {
-    readonly version?: string;
-    readonly gitTag?: string;
-    readonly gitHead?: string;
-  };
-  readonly options?: {
-    readonly dryRun?: boolean;
-  };
-}
+export { renderTemplate } from './lib/template.js';
+export { commandRunner } from './lib/command-runner.js';
 
 const buildStates = new Map<string, BuildState>();
 
 /**
- * Replaces `{{variable}}` placeholders in a template string with
- * values from the provided variables map. Unknown variables resolve
- * to the empty string.
- *
- * @param template Template string containing `{{key}}` placeholders.
- * @param vars     Key-value map of replacement values.
- * @returns        The rendered string.
- */
-export function renderTemplate(
-  template: string,
-  vars: Record<string, string | number | undefined>,
-): string {
-  return template.replace(
-    /\{\{(\w+)\}\}/g,
-    (_match: string, key: string): string => {
-      const value = vars[key];
-      return value !== undefined ? String(value) : '';
-    },
-  );
-}
-
-function parsePkgName(pkgname: string): {
-  scope: string | null;
-  name: string | null;
-} {
-  const match = NAME_EXP.exec(pkgname);
-  if (!match) return { scope: null, name: null };
-  return { scope: match[1] ?? null, name: match[2] ?? null };
-}
-
-function readPkg(cwd: string): { name?: string } | null {
-  const pkgPath = path.join(cwd, 'package.json');
-  if (!fs.existsSync(pkgPath)) return null;
-  return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { name?: string };
-}
-
-function buildImageRepo(
-  registry: string | undefined,
-  project: string | undefined,
-  name: string,
-): string {
-  return [registry, project, name].filter(Boolean).join('/');
-}
-
-/**
- * Reads the digest of the built image from a `docker buildx bake`
- * metadata file. Looks up the configured image target, falling back to
- * the first target that recorded a `containerimage.digest`. The
- * `sha256:` prefix is stripped to match the digest shape used elsewhere.
- *
- * @param metadataPath Path to the bake metadata JSON file.
- * @param imageTarget  Target whose digest is preferred, or `"*"`.
- * @returns The image digest hex, or an empty string when unavailable.
- */
-export function parseBakeDigest(
-  metadataPath: string,
-  imageTarget: string,
-): string {
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
-    return '';
-  }
-  try {
-    const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const digestKey = 'containerimage.digest';
-    const entry =
-      imageTarget !== '*' && meta[imageTarget]
-        ? meta[imageTarget]
-        : Object.values(meta).find((t) => typeof t?.[digestKey] === 'string');
-    const digest = entry?.[digestKey];
-    return typeof digest === 'string' ? digest.replace(/^sha256:/, '') : '';
-  } catch {
-    return '';
-  }
-}
-
-/**
- * Executes Docker CLI commands via `child_process.execSync`. Exported
- * as a mutable object so tests can replace `.exec` without running
- * into ESM module immutability restrictions.
- */
-export const commandRunner = {
-  exec(
-    args: string[],
-    options: {
-      cwd: string;
-      input?: string;
-      stdio?: 'inherit' | 'pipe';
-      timeout?: number;
-    },
-    logger: SemanticReleaseContext['logger'],
-  ): string {
-    const cmd = ['docker', ...args].join(' ');
-    logger.log(`Executing: ${cmd}`);
-    const result = execSync(cmd, {
-      cwd: options.cwd,
-      encoding: 'utf8',
-      input: options.input,
-      stdio: options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
-      timeout: options.timeout ?? 600_000,
-    });
-    return typeof result === 'string' ? result : '';
-  },
-};
-
-/**
- * Verifies that the Docker image name is resolvable, the Dockerfile
- * exists, and (when enabled) performs Docker registry login using
- * configured credentials.
+ * Verifies that the Docker image name is resolvable, the strategy's
+ * required files exist, and (when enabled) performs Docker registry
+ * login using configured credentials.
  *
  * @param pluginConfig Raw plugin configuration from semantic-release.
  * @param context      Semantic-release context with env and logger.
@@ -199,33 +51,7 @@ export async function verifyConditions(
     );
   }
 
-  let verifiedTarget: string;
-  if (config.isBakeEnabled()) {
-    const bake = config.getDockerBake()!;
-    if (!bake.group && !bake.target) {
-      throw new SemanticReleaseError(
-        'dockerBake requires either "group" or "target" to be set.',
-        'EINVAL',
-      );
-    }
-    const bakeFile = path.resolve(context.cwd, bake.file);
-    if (!fs.existsSync(bakeFile)) {
-      throw new SemanticReleaseError(
-        `Bake file not found at ${bakeFile}`,
-        'ENOENT',
-      );
-    }
-    verifiedTarget = `bakeFile="${bakeFile}"`;
-  } else {
-    const dockerfile = path.resolve(context.cwd, config.getDockerFile());
-    if (!fs.existsSync(dockerfile)) {
-      throw new SemanticReleaseError(
-        `Dockerfile not found at ${dockerfile}`,
-        'ENOENT',
-      );
-    }
-    verifiedTarget = `dockerfile="${dockerfile}"`;
-  }
+  const verifiedTarget = selectStrategy(config, context).verifyTarget();
 
   if (config.isLoginEnabled() && config.hasCredentials()) {
     if (!config.hasCompleteCredentials()) {
@@ -258,8 +84,7 @@ export async function verifyConditions(
 }
 
 /**
- * Builds a Docker image using the configured Dockerfile, tags, build
- * arguments, and optional buildx multi-platform support. Stores build
+ * Builds the Docker image via the selected strategy and stores build
  * state in a module-level map for the subsequent publish step.
  *
  * @param pluginConfig Raw plugin configuration from semantic-release.
@@ -298,145 +123,15 @@ export async function prepare(
     .filter(Boolean);
 
   const buildId = crypto.randomBytes(10).toString('hex');
-  const bake = config.getDockerBake();
-  const isBuildx = bake !== undefined || config.isBuildxEnabled();
+  const isBuildx = config.isBakeEnabled() || config.isBuildxEnabled();
 
-  let bakeMetadataFile = '';
-  const args: string[] = [];
-
-  if (bake) {
-    bakeMetadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
-    args.push(
-      'buildx',
-      'bake',
-      '--file',
-      path.resolve(context.cwd, bake.file),
-      '--metadata-file',
-      bakeMetadataFile,
-    );
-
-    if (isDryRun) {
-      args.push('--set', '*.output=type=cacheonly');
-    } else if (tags.length > 0) {
-      const tagList = tags.map((tag) => `${repo}:${tag}`).join(',');
-      args.push('--set', `${bake.imageTarget}.tags=${tagList}`);
-    }
-
-    for (const [key, value] of Object.entries(config.getDockerArgs())) {
-      if (value === true) {
-        context.logger.log(
-          `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
-        );
-        continue;
-      }
-      args.push(
-        '--set',
-        `*.args.${key}=${renderTemplate(String(value), vars)}`,
-      );
-    }
-
-    const selector = bake.target ?? bake.group;
-    if (selector) {
-      args.push(selector);
-    }
-  } else {
-    if (isBuildx) {
-      args.push('buildx', 'build');
-    } else {
-      args.push('build');
-    }
-
-    const network = config.getDockerNetwork();
-    if (network) {
-      args.push(`--network=${network}`);
-    }
-
-    if (!isBuildx) {
-      args.push('--tag', `${repo}:${buildId}`);
-    }
-
-    if (!isDryRun) {
-      for (const tag of tags) {
-        args.push('--tag', `${repo}:${tag}`);
-      }
-    }
-
-    if (config.isBuildQuiet()) {
-      args.push('--quiet');
-    }
-
-    if (config.isNoCacheEnabled()) {
-      args.push('--no-cache');
-    }
-
-    for (const source of config.getDockerBuildCacheFrom()) {
-      args.push('--cache-from', source);
-    }
-
-    for (const [key, value] of Object.entries(config.getDockerArgs())) {
-      if (value === true) {
-        args.push('--build-arg', key);
-      } else {
-        args.push(
-          '--build-arg',
-          `${key}=${renderTemplate(String(value), vars)}`,
-        );
-      }
-    }
-
-    const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
-      ([key, value]): string[] => {
-        const flag = key.startsWith('-')
-          ? key
-          : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
-        if (value === null) return [flag];
-        return (Array.isArray(value) ? value : [value]).flatMap((v) => [
-          flag,
-          v,
-        ]);
-      },
-    );
-    args.push(...extraFlags);
-
-    if (isBuildx) {
-      args.push('--platform', config.getDockerPlatform().join(','));
-      args.push('--pull');
-      if (config.isPublishEnabled() && !isDryRun) {
-        args.push('--push');
-      }
-    }
-
-    args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
-    args.push(path.resolve(context.cwd, config.getDockerContext()));
-  }
-
-  let stdout = '';
-  let sha256 = '';
-  try {
-    stdout = commandRunner.exec(
-      args,
-      { cwd: context.cwd, stdio: 'pipe', timeout: config.getDockerTimeout() },
-      context.logger,
-    );
-    if (bake) {
-      sha256 = parseBakeDigest(bakeMetadataFile, bake.imageTarget);
-    }
-  } finally {
-    if (bake) {
-      fs.rmSync(bakeMetadataFile, { force: true });
-    }
-  }
-
-  if (!bake) {
-    sha256 =
-      stdout
-        .split('\n')
-        .reverse()
-        .reduce<string | undefined>(
-          (found, line) => found ?? SHA_REGEX.exec(line)?.groups?.['sha'],
-          undefined,
-        ) ?? '';
-  }
+  const { sha256 } = selectStrategy(config, context).build({
+    repo,
+    tags,
+    vars,
+    buildId,
+    isDryRun,
+  });
   const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
   buildStates.set(repo, {
@@ -452,9 +147,8 @@ export async function prepare(
 }
 
 /**
- * Tags and pushes the previously built Docker image to the configured
- * registry. Sets GitHub Actions outputs and optionally removes local
- * images after a successful push.
+ * Finalizes publishing of the previously built image (strategy-specific
+ * tag/push/cleanup) and sets GitHub Actions outputs.
  *
  * @param pluginConfig Raw plugin configuration from semantic-release.
  * @param context      Semantic-release context with env and logger.
@@ -477,24 +171,7 @@ export async function publish(
     return;
   }
 
-  if (!state.isBuildx && config.isPublishEnabled()) {
-    for (const tag of state.tags) {
-      commandRunner.exec(
-        ['tag', `${state.repo}:${state.buildId}`, `${state.repo}:${tag}`],
-        { cwd: context.cwd, timeout: config.getDockerTimeout() },
-        context.logger,
-      );
-      commandRunner.exec(
-        ['push', `${state.repo}:${tag}`],
-        {
-          cwd: context.cwd,
-          stdio: 'inherit',
-          timeout: config.getDockerTimeout(),
-        },
-        context.logger,
-      );
-    }
-  }
+  selectStrategy(config, context).finalizePublish(state);
 
   try {
     actions.setOutput('docker_image', state.repo);
@@ -503,27 +180,6 @@ export async function publish(
     actions.setOutput('docker_image_sha_long', state.sha256);
   } catch {
     /* ignored outside GitHub Actions */
-  }
-
-  if (config.isAutoCleanEnabled() && !state.isBuildx) {
-    try {
-      const images = commandRunner
-        .exec(
-          ['images', state.repo, '-q'],
-          { cwd: context.cwd, timeout: config.getDockerTimeout() },
-          context.logger,
-        )
-        .trim();
-      if (images) {
-        commandRunner.exec(
-          ['rmi', '-f', ...images.split('\n')],
-          { cwd: context.cwd, timeout: config.getDockerTimeout() },
-          context.logger,
-        );
-      }
-    } catch {
-      context.logger.log('Image cleanup failed. Continuing.');
-    }
   }
 
   context.logger.log(
