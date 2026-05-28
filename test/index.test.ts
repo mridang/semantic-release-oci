@@ -14,7 +14,6 @@ import {
   prepare,
   publish,
   commandRunner,
-  renderTemplate,
 } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 
@@ -70,30 +69,6 @@ describe('semantic-release-oci', () => {
     commandRunner.exec = originalExec;
   });
 
-  describe('renderTemplate', () => {
-    it('should replace simple variables', () => {
-      expect(renderTemplate('{{version}}', { version: '1.2.3' })).toBe('1.2.3');
-    });
-
-    it('should replace multiple variables', () => {
-      expect(
-        renderTemplate('{{major}}.{{minor}}', { major: '1', minor: '2' }),
-      ).toBe('1.2');
-    });
-
-    it('should replace unknown variables with empty string', () => {
-      expect(renderTemplate('{{unknown}}', {})).toBe('');
-    });
-
-    it('should pass through strings without templates', () => {
-      expect(renderTemplate('latest', {})).toBe('latest');
-    });
-
-    it('should render numeric values as strings', () => {
-      expect(renderTemplate('v{{major}}', { major: 1 })).toBe('v1');
-    });
-  });
-
   describe('verifyConditions', () => {
     it('should throw ENOENT when docker is not available', async () => {
       const tmpDir = makeTempDir();
@@ -146,38 +121,6 @@ describe('semantic-release-oci', () => {
           makeContext(tmpDir),
         ),
       ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should throw EINVAL when bake has neither group nor target', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      fs.writeFileSync(
-        path.join(tmpDir, 'docker-bake.hcl'),
-        'group "release" {}',
-      );
-
-      await expect(
-        verifyConditions(
-          { dockerBake: {} } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
-      ).rejects.toThrow(expect.objectContaining({ code: 'EINVAL' }));
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should throw ENOENT when the bake file does not exist', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-
-      await expect(
-        verifyConditions(
-          { dockerBake: { group: 'release' } } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
-      ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -310,22 +253,6 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should resolve a custom Dockerfile path', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      fs.mkdirSync(path.join(tmpDir, 'build'), { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, 'build', 'Dockerfile'), 'FROM alpine');
-
-      await expect(
-        verifyConditions(
-          { dockerFile: 'build/Dockerfile' } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
-      ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
     it('should login to a custom registry', async () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, 'my-app');
@@ -347,622 +274,43 @@ describe('semantic-release-oci', () => {
 
       fs.rmSync(tmpDir, { recursive: true });
     });
-  });
 
-  describe('prepare', () => {
-    it('should build a standard docker image with default tags', async () => {
+    it('should log a verification summary on success', async () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
-      execMock.mockReturnValue('writing image sha256:abc123def456\n');
+      const context = makeContext(tmpDir);
 
-      await prepare(
-        { dockerImage: 'my-app' } as OciPluginConfig,
-        makeContext(tmpDir),
+      await verifyConditions({} as OciPluginConfig, context);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        expect.stringMatching(/^Verified: image="my-app", dockerfile=/),
       );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args[0]).toBe('build');
-      expect(args).toContain('--quiet');
-      expect(args.some((a) => a === 'my-app:latest')).toBe(true);
-      expect(args.some((a) => a === 'my-app:1-latest')).toBe(true);
-      expect(args.some((a) => a === 'my-app:1.2.3')).toBe(true);
-      expect(args.some((a) => a.startsWith('--network'))).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
+  });
 
-    it('should build with a custom registry and project', async () => {
+  describe('prepare', () => {
+    it('should store build state and log the built image with a scraped sha', async () => {
       const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerRegistry: 'ghcr.io',
-          dockerProject: 'myorg',
-        } as OciPluginConfig,
-        makeContext(tmpDir),
+      execMock.mockReturnValue(
+        'writing image sha256:abcdef1234567890abcdef1234567890\n',
       );
+      const context = makeContext(tmpDir);
 
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args.some((a) => a.includes('ghcr.io/myorg/my-app'))).toBe(true);
+      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
 
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should resolve image name and project from scoped package.json', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, '@myorg/my-app');
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare({} as OciPluginConfig, makeContext(tmpDir));
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args.some((a) => a.includes('myorg/my-app'))).toBe(true);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should use buildx when dockerPlatform is set', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64', 'linux/arm64'],
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args[0]).toBe('buildx');
-      expect(args[1]).toBe('build');
-      expect(args).toContain('--platform');
-      expect(args).toContain('linux/amd64,linux/arm64');
-      expect(args).toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should not include --push in buildx dry-run mode', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-        } as OciPluginConfig,
-        makeContext(tmpDir, {}, { options: { dryRun: true } }),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).not.toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should omit --push in buildx mode when dockerPublish is false', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-          dockerPublish: false,
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args[0]).toBe('buildx');
-      expect(args).not.toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should drive buildx bake when dockerBake is set', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release', imageTarget: 'image' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args[0]).toBe('buildx');
-      expect(args[1]).toBe('bake');
-      expect(args).toContain('--file');
-      const tagSet = args.find((a) => a.startsWith('image.tags='));
-      expect(tagSet).toContain('my-app:1.2.3');
-      expect(args[args.length - 1]).toBe('release');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should join multiple bake tags into a single --set override', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerTags: ['latest', '{{version}}'],
-          dockerBake: { group: 'release', imageTarget: 'image' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const tagSets = args.filter((a) => a.startsWith('image.tags='));
-      expect(tagSets).toHaveLength(1);
-      expect(tagSets[0]).toBe('image.tags=my-app:latest,my-app:1.2.3');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should scope bake tags to the wildcard target by default', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const tagSet = args.find((a) => a.startsWith('*.tags='));
-      expect(tagSet).toContain('my-app:1.2.3');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should use cacheonly output and no tags in bake dry-run mode', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release', imageTarget: 'image' },
-        } as OciPluginConfig,
-        makeContext(tmpDir, {}, { options: { dryRun: true } }),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('*.output=type=cacheonly');
-      expect(args.some((a) => a.startsWith('image.tags='))).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should forward dockerArgs as bake --set args', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-          dockerArgs: { VERSION: '{{version}}' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('*.args.VERSION=1.2.3');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass a metadata-file to bake for digest capture', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--metadata-file');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should skip boolean dockerArgs in bake mode', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-          dockerArgs: { FROM_ENV: true },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args.some((a) => a.includes('FROM_ENV'))).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should prefer target over group as the bake selector', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release', target: 'image' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args[args.length - 1]).toBe('image');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should remove the bake metadata file after the build', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      let metadataPath = '';
-      execMock.mockImplementation((args: string[]): string => {
-        const idx = args.indexOf('--metadata-file');
-        if (idx >= 0) {
-          metadataPath = args[idx + 1];
-          fs.writeFileSync(
-            metadataPath,
-            JSON.stringify({
-              image: { 'containerimage.digest': 'sha256:abc123' },
-            }),
-          );
-        }
-        return '';
-      });
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release', imageTarget: 'image' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      expect(metadataPath).not.toBe('');
-      expect(fs.existsSync(metadataPath)).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should remove the bake metadata file even when the build fails', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      let metadataPath = '';
-      execMock.mockImplementation((args: string[]): string => {
-        const idx = args.indexOf('--metadata-file');
-        if (idx >= 0) {
-          metadataPath = args[idx + 1];
-          fs.writeFileSync(metadataPath, '{}');
-        }
-        throw new Error('build failed');
-      });
-
-      await expect(
-        prepare(
-          {
-            dockerImage: 'my-app',
-            dockerBake: { group: 'release' },
-          } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
-      ).rejects.toThrow('build failed');
-
-      expect(metadataPath).not.toBe('');
-      expect(fs.existsSync(metadataPath)).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should skip version tags in dry-run mode for standard builds', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerTags: ['{{version}}', 'latest'],
-        } as OciPluginConfig,
-        makeContext(tmpDir, {}, { options: { dryRun: true } }),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
-      expect(tagArgs.length).toBe(1);
-      expect(tagArgs[0]).not.toContain('1.2.3');
-      expect(tagArgs[0]).not.toContain('latest');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass build args with template rendering', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerArgs: { VERSION: '{{version}}', STATIC: 'hello' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('VERSION=1.2.3');
-      expect(args).toContain('STATIC=hello');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass boolean build args without value', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerArgs: { GITHUB_TOKEN: true },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const buildArgIdx = args.indexOf('GITHUB_TOKEN');
-      expect(buildArgIdx).toBeGreaterThan(-1);
-      expect(args[buildArgIdx - 1]).toBe('--build-arg');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should include --no-cache when configured', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        { dockerImage: 'my-app', dockerNoCache: true } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--no-cache');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should include --cache-from flags in build command', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildCacheFrom: ['type=local,src=/tmp/cache'],
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--cache-from');
-      expect(args).toContain('type=local,src=/tmp/cache');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass extra build flags', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildFlags: { target: 'production', pull: null },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--target');
-      expect(args).toContain('production');
-      expect(args).toContain('--pull');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass provenance flag via dockerBuildFlags', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-          dockerBuildFlags: { provenance: 'false' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--provenance');
-      expect(args).toContain('false');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should use single dash for single-char build flag keys', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildFlags: { t: 'production' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('-t');
-      expect(args).toContain('production');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should repeat flags for array build flag values', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildFlags: { label: ['foo=bar', 'baz=qux'] },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const labelIndices = args.reduce<number[]>(
-        (acc, a, i) => (a === '--label' ? [...acc, i] : acc),
-        [],
-      );
-      expect(labelIndices.length).toBe(2);
-      expect(args[labelIndices[0] + 1]).toBe('foo=bar');
-      expect(args[labelIndices[1] + 1]).toBe('baz=qux');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should pass through flag keys that already start with a dash', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildFlags: { '-t': 'mytag' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const idx = args.indexOf('-t');
-      expect(idx).toBeGreaterThan(-1);
-      expect(args[idx + 1]).toBe('mytag');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should normalize underscore flag keys to kebab-case', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildFlags: { cache_from: 'type=inline' },
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--cache-from');
-      expect(args).toContain('type=inline');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should forward dockerTimeout to exec options', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerTimeout: 1_800_000,
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      expect(execMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ timeout: 1_800_000 }),
-        expect.anything(),
+      expect(context.logger.log).toHaveBeenCalledWith(
+        expect.stringContaining('sha: abcdef123456'),
       );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should omit --quiet when dockerBuildQuiet is false', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBuildQuiet: false,
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).not.toContain('--quiet');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should fall back to buildId when no SHA is in build output', async () => {
+    it('should fall back to the buildId when no sha is in build output', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('Step 1/1 : FROM alpine\n');
@@ -977,153 +325,31 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should include --pull in buildx mode', async () => {
+    it('should resolve image name and project from a scoped package.json', async () => {
       const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, '@myorg/my-app');
       writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--pull');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should not tag with buildId in buildx mode', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
-      expect(tagArgs.every((t) => !t.match(/:[a-f0-9]{20}$/))).toBe(true);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should extract SHA from build output', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue(
-        'Step 1/1 : FROM alpine\nwriting image sha256:abcdef1234567890abcdef1234567890\n',
-      );
       const context = makeContext(tmpDir);
 
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await prepare({} as OciPluginConfig, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
-        expect.stringContaining('sha: abcdef123456'),
+        expect.stringMatching(/^Docker image built: myorg\/my-app:/),
       );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should use a custom Dockerfile path in build command', async () => {
-      const tmpDir = makeTempDir();
-      fs.mkdirSync(path.join(tmpDir, 'build'), { recursive: true });
-      fs.writeFileSync(path.join(tmpDir, 'build', 'Dockerfile'), 'FROM alpine');
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerFile: 'build/Dockerfile',
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain(path.resolve(tmpDir, 'build/Dockerfile'));
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should use a custom context path in build command', async () => {
+    it('should fall back to an empty image name with no config or package.json', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
-      fs.mkdirSync(path.join(tmpDir, 'app'), { recursive: true });
-      execMock.mockReturnValue('');
+      const context = makeContext(tmpDir);
 
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerContext: 'app',
-        } as OciPluginConfig,
-        makeContext(tmpDir),
+      await prepare({ dockerTags: ['latest'] } as OciPluginConfig, context);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        expect.stringMatching(/^Docker image built: :/),
       );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain(path.resolve(tmpDir, 'app'));
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should use a custom network in build command', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerNetwork: 'host',
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args).toContain('--network=host');
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should produce no version tags when dockerTags is empty', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerTags: [],
-        } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
-      expect(tagArgs.length).toBe(1);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should fall back to empty image name when no config or package.json', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await prepare(
-        { dockerTags: ['latest'] } as OciPluginConfig,
-        makeContext(tmpDir),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args.some((a) => a === ':latest')).toBe(true);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -1133,13 +359,12 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('');
 
-      await prepare(
-        { dockerImage: 'my-app', dockerTags: ['latest'] } as OciPluginConfig,
-        makeContext(tmpDir, {}, { nextRelease: undefined }),
-      );
-
-      const args = execMock.mock.calls[0][0] as string[];
-      expect(args.some((a) => a === 'my-app:latest')).toBe(true);
+      await expect(
+        prepare(
+          { dockerImage: 'my-app', dockerTags: ['latest'] } as OciPluginConfig,
+          makeContext(tmpDir, {}, { nextRelease: undefined }),
+        ),
+      ).resolves.toBeUndefined();
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -1163,117 +388,6 @@ describe('semantic-release-oci', () => {
   });
 
   describe('publish', () => {
-    it('should tag and push each tag for standard builds', async () => {
-      const tmpDir = makeTempDir();
-      writePackageJson(tmpDir, 'my-app');
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('writing image sha256:abc123\n');
-
-      const context = makeContext(tmpDir);
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
-
-      execMock.mockClear();
-      execMock.mockReturnValue('');
-
-      await publish({ dockerImage: 'my-app' } as OciPluginConfig, context);
-
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      const tagCalls = allArgs.filter((a) => a[0] === 'tag');
-      const pushCalls = allArgs.filter((a) => a[0] === 'push');
-
-      expect(tagCalls.length).toBe(3);
-      expect(pushCalls.length).toBe(3);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should skip push for buildx builds', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      const context = makeContext(tmpDir);
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-        } as OciPluginConfig,
-        context,
-      );
-
-      execMock.mockClear();
-
-      await publish(
-        {
-          dockerImage: 'my-app',
-          dockerPlatform: ['linux/amd64'],
-        } as OciPluginConfig,
-        context,
-      );
-
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      const tagCalls = allArgs.filter((a) => a[0] === 'tag');
-      const pushCalls = allArgs.filter((a) => a[0] === 'push');
-
-      expect(tagCalls.length).toBe(0);
-      expect(pushCalls.length).toBe(0);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should skip tag, push, and cleanup for bake builds', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      const context = makeContext(tmpDir);
-      await prepare(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-        } as OciPluginConfig,
-        context,
-      );
-
-      execMock.mockClear();
-
-      await publish(
-        {
-          dockerImage: 'my-app',
-          dockerBake: { group: 'release' },
-        } as OciPluginConfig,
-        context,
-      );
-
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(0);
-      expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
-      expect(allArgs.filter((a) => a[0] === 'rmi').length).toBe(0);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should publish with fallback empty image name', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('writing image sha256:abc123\n');
-
-      const context = makeContext(tmpDir);
-      const cfg = { dockerTags: ['latest'] } as OciPluginConfig;
-      await prepare(cfg, context);
-
-      execMock.mockClear();
-      execMock.mockReturnValue('');
-
-      await publish(cfg, context);
-
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      const pushCalls = allArgs.filter((a) => a[0] === 'push');
-      expect(pushCalls.length).toBe(1);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
     it('should skip publish when no build state exists', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -1292,75 +406,74 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should clean up images when dockerAutoClean is true', async () => {
+    it('should delegate finalization to the strategy for standard builds', async () => {
       const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
       const context = makeContext(tmpDir);
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await prepare({} as OciPluginConfig, context);
 
-      execMock.mockImplementation((args: string[]) => {
-        if (args[0] === 'images') return 'img1\nimg2\n';
-        return '';
-      });
+      execMock.mockClear();
+      execMock.mockReturnValue('');
 
-      await publish({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await publish({} as OciPluginConfig, context);
 
       const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      expect(allArgs.some((a) => a[0] === 'rmi')).toBe(true);
+      expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
+      expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should skip rmi when no images are found during cleanup', async () => {
+    it('should publish with a fallback empty image name', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
       const context = makeContext(tmpDir);
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      const cfg = {
+        dockerTags: ['latest'],
+        dockerAutoClean: false,
+      } as OciPluginConfig;
+      await prepare(cfg, context);
 
-      execMock.mockImplementation((args: string[]) => {
-        if (args[0] === 'images') return '   \n';
-        return '';
-      });
+      execMock.mockClear();
+      execMock.mockReturnValue('');
 
-      await publish({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await publish(cfg, context);
 
       const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
+      expect(allArgs.filter((a) => a[0] === 'push').length).toBe(1);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should continue gracefully when image cleanup fails', async () => {
+    it('should resolve the repo from a scoped package.json on publish', async () => {
       const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, '@myorg/my-app');
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
       const context = makeContext(tmpDir);
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await prepare({ dockerAutoClean: false } as OciPluginConfig, context);
 
-      execMock.mockImplementation((args: string[]) => {
-        if (args[0] === 'images') return 'img1\n';
-        if (args[0] === 'rmi') throw new Error('permission denied');
-        return '';
-      });
+      execMock.mockClear();
+      execMock.mockReturnValue('');
 
-      await expect(
-        publish({ dockerImage: 'my-app' } as OciPluginConfig, context),
-      ).resolves.toBeUndefined();
+      await publish({ dockerAutoClean: false } as OciPluginConfig, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
-        'Image cleanup failed. Continuing.',
+        expect.stringMatching(/^Published: myorg\/my-app \(tags: /),
       );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
 
-    it('should skip cleanup when dockerAutoClean is false', async () => {
+    it('should log a published summary on success', async () => {
       const tmpDir = makeTempDir();
+      writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
@@ -1378,38 +491,9 @@ describe('semantic-release-oci', () => {
         context,
       );
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
-      expect(allArgs.some((a) => a[0] === 'images')).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should skip push when dockerPublish is false', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('writing image sha256:abc123\n');
-
-      const context = makeContext(tmpDir);
-      await prepare(
-        { dockerImage: 'my-app', dockerPublish: false } as OciPluginConfig,
-        context,
+      expect(context.logger.log).toHaveBeenCalledWith(
+        expect.stringMatching(/^Published: my-app \(tags: /),
       );
-
-      execMock.mockClear();
-      execMock.mockImplementation((args: string[]) => {
-        if (args[0] === 'images') return 'img1\n';
-        return '';
-      });
-
-      await publish(
-        { dockerImage: 'my-app', dockerPublish: false } as OciPluginConfig,
-        context,
-      );
-
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
-      const pushCalls = allArgs.filter((a) => a[0] === 'push');
-      expect(pushCalls.length).toBe(0);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
