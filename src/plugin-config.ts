@@ -23,6 +23,12 @@ export interface OciPluginConfig extends Config {
   readonly dockerNoCache?: boolean;
   readonly dockerBuildCacheFrom?: string | string[];
   readonly dockerTimeout?: number;
+  readonly dockerBake?: {
+    readonly file?: string;
+    readonly group?: string;
+    readonly target?: string;
+    readonly imageTarget?: string;
+  };
 }
 
 /**
@@ -83,28 +89,28 @@ export class OciConfig {
    * Tag templates applied to the built image. Supports `{{variable}}`
    * placeholders resolved at build time.
    *
-   * @returns Array of tag template strings.
+   * @returns A fresh array of tag template strings (never the caller's
+   *          own array).
    */
-  getDockerTags(): string[] {
+  getDockerTags(): readonly string[] {
     const tags = this.config.dockerTags ?? [
       'latest',
       '{{major}}-latest',
       '{{version}}',
     ];
-    if (typeof tags === 'string') {
-      return tags.split(/\s*,\s*/);
-    }
-    return tags;
+    return typeof tags === 'string'
+      ? tags.split(/\s*,\s*/).filter(Boolean)
+      : [...tags];
   }
 
   /**
    * Build arguments passed via `--build-arg`. String values support
    * template rendering; boolean `true` passes the key without a value.
    *
-   * @returns Key-value map of build arguments.
+   * @returns A shallow copy of the build-argument map.
    */
-  getDockerArgs(): Record<string, string | boolean> {
-    return this.config.dockerArgs ?? {};
+  getDockerArgs(): Readonly<Record<string, string | boolean>> {
+    return { ...(this.config.dockerArgs ?? {}) };
   }
 
   /**
@@ -112,23 +118,22 @@ export class OciConfig {
    * normalized to `--kebab-case`. A `null` value emits the flag
    * without an argument.
    *
-   * @returns Key-value map of build flags.
+   * @returns A shallow copy of the build-flag map.
    */
-  getDockerBuildFlags(): Record<string, string | string[] | null> {
-    return this.config.dockerBuildFlags ?? {};
+  getDockerBuildFlags(): Readonly<Record<string, string | string[] | null>> {
+    return { ...(this.config.dockerBuildFlags ?? {}) };
   }
 
   /**
    * Target platforms for multi-architecture builds via `docker buildx`.
    *
-   * @returns Array of platform strings such as `"linux/amd64"`.
+   * @returns A fresh array of platform strings such as `"linux/amd64"`.
    */
-  getDockerPlatform(): string[] {
+  getDockerPlatform(): readonly string[] {
     const platform = this.config.dockerPlatform ?? [];
-    if (typeof platform === 'string') {
-      return platform.split(/\s*,\s*/);
-    }
-    return platform;
+    return typeof platform === 'string'
+      ? platform.split(/\s*,\s*/).filter(Boolean)
+      : [...platform];
   }
 
   /**
@@ -200,15 +205,14 @@ export class OciConfig {
   /**
    * Cache sources passed via `--cache-from` to `docker build`.
    *
-   * @returns Array of cache source strings.
+   * @returns A fresh array of cache source strings.
    */
-  getDockerBuildCacheFrom(): string[] {
+  getDockerBuildCacheFrom(): readonly string[] {
     const cacheFrom = this.config.dockerBuildCacheFrom;
     if (!cacheFrom) return [];
-    if (typeof cacheFrom === 'string') {
-      return cacheFrom.split(/\s*,\s*/);
-    }
-    return cacheFrom;
+    return typeof cacheFrom === 'string'
+      ? cacheFrom.split(/\s*,\s*/).filter(Boolean)
+      : [...cacheFrom];
   }
 
   /**
@@ -228,6 +232,46 @@ export class OciConfig {
    */
   isBuildxEnabled(): boolean {
     return this.getDockerPlatform().length > 0;
+  }
+
+  /**
+   * Docker Bake settings. When present, the build step drives
+   * `docker buildx bake` instead of `docker buildx build`, so a single
+   * bake group can produce several outputs (for example a pushed image
+   * and host-exported binaries) from one shared build. The bake file
+   * path defaults to `docker-bake.hcl`, and the tag-injection target
+   * defaults to the configured `target`, or `*` (all targets) when only
+   * a `group` is given.
+   *
+   * @returns Normalized bake settings, or `undefined` when not set.
+   */
+  getDockerBake():
+    | {
+        readonly file: string;
+        readonly group: string | undefined;
+        readonly target: string | undefined;
+        readonly imageTarget: string;
+      }
+    | undefined {
+    const bake = this.config.dockerBake;
+    if (!bake) {
+      return undefined;
+    }
+    return {
+      file: bake.file ?? 'docker-bake.hcl',
+      group: bake.group,
+      target: bake.target,
+      imageTarget: bake.imageTarget ?? bake.target ?? '*',
+    };
+  }
+
+  /**
+   * Whether Docker Bake mode is enabled via the `dockerBake` option.
+   *
+   * @returns `true` when bake settings are present.
+   */
+  isBakeEnabled(): boolean {
+    return this.config.dockerBake !== undefined;
   }
 
   /**

@@ -141,6 +141,22 @@ All options are case-sensitive and lowercased in the JSON configuration.
   (build, push, login, tag, and cleanup). Default: `600000` (10 minutes).
   Increase this when building large images or pushing to slow registries.
 
+- **`dockerBake` (object, optional):**
+  Drives `docker buildx bake` instead of `docker buildx build`, so a single
+  bake group can produce several outputs (for example a pushed image and
+  host-exported binaries) from one shared compile. See "Bake Mode" below.
+  Fields:
+  - **`file` (string, optional):** Path to the bake definition file.
+    Default: `"docker-bake.hcl"`.
+  - **`group` (string, optional):** Bake group to build.
+  - **`target` (string, optional):** Bake target to build, used when no
+    group is given. Takes precedence over `group` when both are set.
+  - **`imageTarget` (string, optional):** Target whose `tags` receive the
+    resolved version tags via `--set`. Defaults to the configured `target`,
+    or `"*"` (all targets) when only a `group` is given. For a multi-target
+    group, set this to the image target so the version tags are not applied
+    to non-image targets such as binary exports.
+
 ## Environment Variables
 
 When `dockerLogin` is enabled (the default), the plugin reads credentials
@@ -157,6 +173,41 @@ When `dockerPlatform` is configured with one or more platforms (e.g.,
 `['linux/amd64', 'linux/arm64']`), the plugin uses `docker buildx build`
 instead of `docker build`. In buildx mode, images are pushed during the
 build step (via `--push`) rather than tagged and pushed separately.
+
+## Bake Mode
+
+When `dockerBake` is set, the build step runs `docker buildx bake` against
+the configured `group` or `target` instead of `docker buildx build`. The
+plugin renders the configured `dockerTags` and injects them into the chosen
+`imageTarget` via `--set <imageTarget>.tags=<repo>:<tag>`, and forwards
+string-valued `dockerArgs` as `--set *.args.<key>=<value>`. Boolean
+`dockerArgs` (the env-sourced form) are not supported in bake mode and are
+skipped with a log message; declare them in the bake file instead.
+Everything else about the build — platforms, contexts, Dockerfiles, and
+per-target outputs — is declared in the bake file, which is the source of
+truth in this mode. Options that describe build mechanics (`dockerPlatform`,
+`dockerFile`, `dockerContext`, `dockerNetwork`, `dockerNoCache`,
+`dockerBuildCacheFrom`, `dockerBuildQuiet`, `dockerBuildFlags`) are owned by
+the bake file and not forwarded.
+
+Bake mode requires either `group` or `target` to be set, and verifies that
+the bake file (not a `Dockerfile`) exists during `verifyConditions`. The
+`imageTarget` must be a target that the selected `group`/`target` actually
+builds; otherwise the tag override is silently ignored by bake. Each
+configured `dockerTag` is applied via its own repeated `--set
+<imageTarget>.tags=<repo>:<tag>` flag, which together replace any tags
+declared in the bake file (buildx rejects a comma-joined value as a single
+malformed tag).
+
+Push behaviour follows each target's `output` (for example `type=registry`
+to push, `type=local` to export files to the host); `dockerPublish` is not
+consulted in bake mode. In dry-run mode the plugin overrides outputs to
+`type=cacheonly` so the build is validated without pushing or writing
+artifacts. The image digest is read from a bake metadata file and exposed
+via the `docker_image_sha_*` outputs.
+
+Bake mode requires Buildx v0.10 or newer (the `--metadata-file` flag for
+`bake` was added in v0.10; shipped with Docker 23.0+).
 
 ## GitHub Actions Outputs
 
