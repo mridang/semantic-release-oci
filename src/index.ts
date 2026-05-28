@@ -9,6 +9,32 @@ import type { BuildState, SemanticReleaseContext } from './lib/types.js';
 const buildStates = new Map<string, BuildState>();
 
 /**
+ * Resolves the image name and full repository path from config, falling
+ * back to the `package.json` name and scope. The image name is
+ * `undefined` when neither config nor package.json provides one; the
+ * repository path treats a missing name as empty.
+ *
+ * @param config  Resolved plugin configuration.
+ * @param context Semantic-release context (for cwd).
+ * @returns       The resolved image name and repository path.
+ */
+function resolveImage(
+  config: OciConfig,
+  context: SemanticReleaseContext,
+): { imageName: string | undefined; repo: string } {
+  const pkg = readPkg(context.cwd);
+  const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
+  const imageName = config.getDockerImage() ?? parsed?.name ?? undefined;
+  const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
+  const repo = buildImageRepo(
+    config.getDockerRegistry(),
+    project,
+    imageName ?? '',
+  );
+  return { imageName, repo };
+}
+
+/**
  * Verifies that the Docker image name is resolvable, the strategy's
  * required files exist, and (when enabled) performs Docker registry
  * login using configured credentials.
@@ -25,9 +51,7 @@ export async function verifyConditions(
 
   strategy.verifyDocker();
 
-  const pkg = readPkg(context.cwd);
-  const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
-  const imageName = config.getDockerImage() ?? parsed?.name;
+  const { imageName } = resolveImage(config, context);
 
   if (!imageName) {
     throw new SemanticReleaseError(
@@ -55,12 +79,7 @@ export async function prepare(
   context: SemanticReleaseContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const pkg = readPkg(context.cwd);
-  const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
-  const imageName = config.getDockerImage() ?? parsed?.name ?? '';
-  const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
-  const registry = config.getDockerRegistry();
-  const repo = buildImageRepo(registry, project, imageName);
+  const { repo } = resolveImage(config, context);
   const isDryRun = context.options?.dryRun === true;
 
   const version = context.nextRelease?.version ?? '';
@@ -113,12 +132,7 @@ export async function publish(
   context: SemanticReleaseContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const pkg = readPkg(context.cwd);
-  const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
-  const imageName = config.getDockerImage() ?? parsed?.name ?? '';
-  const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
-  const registry = config.getDockerRegistry();
-  const repo = buildImageRepo(registry, project, imageName);
+  const { repo } = resolveImage(config, context);
   const state = buildStates.get(repo);
 
   if (!state) {

@@ -95,14 +95,12 @@ export class BuildStrategy extends ImageStrategy {
       timeout: config.getDockerTimeout(),
     });
 
-    const sha256 =
-      stdout
-        .split('\n')
-        .reverse()
-        .reduce<string | undefined>(
-          (found, line) => found ?? SHA_REGEX.exec(line)?.groups?.['sha'],
-          undefined,
-        ) ?? '';
+    const sha256 = stdout
+      .split('\n')
+      .reduce<string>(
+        (found, line) => SHA_REGEX.exec(line)?.groups?.['sha'] ?? found,
+        '',
+      );
 
     return { sha256, tags };
   }
