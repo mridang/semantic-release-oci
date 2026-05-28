@@ -639,6 +639,57 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should prefer target over group as the bake selector', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release', target: 'image' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      const args = execMock.mock.calls[0][0] as string[];
+      expect(args[args.length - 1]).toBe('image');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should remove the bake metadata file after the build', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      let metadataPath = '';
+      execMock.mockImplementation((args: string[]): string => {
+        const idx = args.indexOf('--metadata-file');
+        if (idx >= 0) {
+          metadataPath = args[idx + 1];
+          fs.writeFileSync(
+            metadataPath,
+            JSON.stringify({
+              image: { 'containerimage.digest': 'sha256:abc123' },
+            }),
+          );
+        }
+        return '';
+      });
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release', imageTarget: 'image' },
+        } as OciPluginConfig,
+        makeContext(tmpDir),
+      );
+
+      expect(metadataPath).not.toBe('');
+      expect(fs.existsSync(metadataPath)).toBe(false);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should skip version tags in dry-run mode for standard builds', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
@@ -1162,6 +1213,38 @@ describe('semantic-release-oci', () => {
 
       expect(tagCalls.length).toBe(0);
       expect(pushCalls.length).toBe(0);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should skip tag, push, and cleanup for bake builds', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      execMock.mockReturnValue('');
+
+      const context = makeContext(tmpDir);
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+        } as OciPluginConfig,
+        context,
+      );
+
+      execMock.mockClear();
+
+      await publish(
+        {
+          dockerImage: 'my-app',
+          dockerBake: { group: 'release' },
+        } as OciPluginConfig,
+        context,
+      );
+
+      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(0);
+      expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
+      expect(allArgs.filter((a) => a[0] === 'rmi').length).toBe(0);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
