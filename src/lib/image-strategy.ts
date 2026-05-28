@@ -43,7 +43,7 @@ export abstract class ImageStrategy {
    * @param options Execution options (input, stdio, timeout).
    * @returns       The command's stdout, or an empty string.
    */
-  exec(args: string[], options: ExecOptions = {}): string {
+  exec(args: readonly string[], options: ExecOptions = {}): string {
     const cmd = ['docker', ...args].join(' ');
     this.context.logger.log(`Executing: ${cmd}`);
     const result = execSync(cmd, {
@@ -128,12 +128,14 @@ export abstract class ImageStrategy {
       );
     }
 
-    const loginArgs = ['login'];
     const registry = this.config.getDockerRegistry();
-    if (registry) {
-      loginArgs.push(registry);
-    }
-    loginArgs.push('-u', this.config.getRegistryUser()!, '--password-stdin');
+    const loginArgs: readonly string[] = [
+      'login',
+      ...(registry ? [registry] : []),
+      '-u',
+      this.config.getRegistryUser()!,
+      '--password-stdin',
+    ];
 
     this.exec(loginArgs, {
       input: this.config.getRegistryPassword(),

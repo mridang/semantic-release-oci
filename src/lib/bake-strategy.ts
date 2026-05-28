@@ -86,52 +86,54 @@ export class BakeStrategy extends ImageStrategy {
     const bake = config.getDockerBake()!;
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
 
-    const args: string[] = [
+    const dockerArgs = Object.entries(config.getDockerArgs());
+    const selector = bake.target ?? bake.group;
+
+    dockerArgs
+      .filter(([, value]) => value === true)
+      .forEach(([key]) =>
+        context.logger.log(
+          `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
+        ),
+      );
+
+    const tagOverride =
+      tags.length > 0
+        ? [
+            '--set',
+            `${bake.imageTarget}.tags=${tags
+              .map((tag) => `${repo}:${tag}`)
+              .join(',')}`,
+          ]
+        : [];
+
+    const args: readonly string[] = [
       'buildx',
       'bake',
       '--file',
       path.resolve(context.cwd, bake.file),
       '--metadata-file',
       metadataFile,
+      ...(isDryRun ? ['--set', '*.output=type=cacheonly'] : tagOverride),
+      ...dockerArgs
+        .filter(([, value]) => value !== true)
+        .flatMap(([key, value]) => [
+          '--set',
+          `*.args.${key}=${this.renderTemplate(String(value), vars)}`,
+        ]),
+      ...(selector ? [selector] : []),
     ];
 
-    if (isDryRun) {
-      args.push('--set', '*.output=type=cacheonly');
-    } else if (tags.length > 0) {
-      const tagList = tags.map((tag) => `${repo}:${tag}`).join(',');
-      args.push('--set', `${bake.imageTarget}.tags=${tagList}`);
-    }
-
-    for (const [key, value] of Object.entries(config.getDockerArgs())) {
-      if (value === true) {
-        context.logger.log(
-          `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
-        );
-        continue;
-      }
-      args.push(
-        '--set',
-        `*.args.${key}=${this.renderTemplate(String(value), vars)}`,
-      );
-    }
-
-    const selector = bake.target ?? bake.group;
-    if (selector) {
-      args.push(selector);
-    }
-
-    let sha256 = '';
     try {
       this.exec(args, {
         stdio: 'pipe',
         timeout: config.getDockerTimeout(),
       });
-      sha256 = parseBakeDigest(metadataFile, bake.imageTarget);
+      const sha256 = parseBakeDigest(metadataFile, bake.imageTarget);
+      return { sha256, tags };
     } finally {
       fs.rmSync(metadataFile, { force: true });
     }
-
-    return { sha256, tags };
   }
 
   /**

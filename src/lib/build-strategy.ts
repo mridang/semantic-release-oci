@@ -43,52 +43,7 @@ export class BuildStrategy extends ImageStrategy {
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const isBuildx = config.isBuildxEnabled();
-
-    const args: string[] = [];
-
-    if (isBuildx) {
-      args.push('buildx', 'build');
-    } else {
-      args.push('build');
-    }
-
     const network = config.getDockerNetwork();
-    if (network) {
-      args.push(`--network=${network}`);
-    }
-
-    if (!isBuildx) {
-      args.push('--tag', `${repo}:${buildId}`);
-    }
-
-    if (!isDryRun) {
-      for (const tag of tags) {
-        args.push('--tag', `${repo}:${tag}`);
-      }
-    }
-
-    if (config.isBuildQuiet()) {
-      args.push('--quiet');
-    }
-
-    if (config.isNoCacheEnabled()) {
-      args.push('--no-cache');
-    }
-
-    for (const source of config.getDockerBuildCacheFrom()) {
-      args.push('--cache-from', source);
-    }
-
-    for (const [key, value] of Object.entries(config.getDockerArgs())) {
-      if (value === true) {
-        args.push('--build-arg', key);
-      } else {
-        args.push(
-          '--build-arg',
-          `${key}=${this.renderTemplate(String(value), vars)}`,
-        );
-      }
-    }
 
     const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
       ([key, value]): string[] => {
@@ -102,18 +57,38 @@ export class BuildStrategy extends ImageStrategy {
         ]);
       },
     );
-    args.push(...extraFlags);
 
-    if (isBuildx) {
-      args.push('--platform', config.getDockerPlatform().join(','));
-      args.push('--pull');
-      if (config.isPublishEnabled() && !isDryRun) {
-        args.push('--push');
-      }
-    }
-
-    args.push('-f', path.resolve(context.cwd, config.getDockerFile()));
-    args.push(path.resolve(context.cwd, config.getDockerContext()));
+    const args: readonly string[] = [
+      ...(isBuildx ? ['buildx', 'build'] : ['build']),
+      ...(network ? [`--network=${network}`] : []),
+      ...(isBuildx ? [] : ['--tag', `${repo}:${buildId}`]),
+      ...(isDryRun ? [] : tags.flatMap((tag) => ['--tag', `${repo}:${tag}`])),
+      ...(config.isBuildQuiet() ? ['--quiet'] : []),
+      ...(config.isNoCacheEnabled() ? ['--no-cache'] : []),
+      ...config
+        .getDockerBuildCacheFrom()
+        .flatMap((source) => ['--cache-from', source]),
+      ...Object.entries(config.getDockerArgs()).flatMap(([key, value]) =>
+        value === true
+          ? ['--build-arg', key]
+          : [
+              '--build-arg',
+              `${key}=${this.renderTemplate(String(value), vars)}`,
+            ],
+      ),
+      ...extraFlags,
+      ...(isBuildx
+        ? [
+            '--platform',
+            config.getDockerPlatform().join(','),
+            '--pull',
+            ...(config.isPublishEnabled() && !isDryRun ? ['--push'] : []),
+          ]
+        : []),
+      '-f',
+      path.resolve(context.cwd, config.getDockerFile()),
+      path.resolve(context.cwd, config.getDockerContext()),
+    ];
 
     const stdout = this.exec(args, {
       stdio: 'pipe',
