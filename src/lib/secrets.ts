@@ -3,13 +3,20 @@ import { redactSecrets } from '../utils/redact.js';
 /**
  * What a secret is replaced with.
  */
-const MASK = '***';
+const MASK = '[redacted]';
 
 /**
- * Values shorter than this are not scrubbed by value: replacing a few
- * characters would mangle the text around them and hide nothing.
+ * Values shorter than this are never scrubbed by value, whatever they came
+ * from: replacing a few characters would mangle the text around them.
  */
-const MIN_SECRET_LENGTH = 6;
+const MIN_SECRET_LENGTH = 4;
+
+/**
+ * Shortest value that is scrubbed when only its place in the command made it
+ * a secret (a literal build argument with an unremarkable name), as opposed to
+ * one whose name or position says it is a credential.
+ */
+const MIN_DEFAULT_LENGTH = 6;
 
 /**
  * Key names (of build arguments and of `key=value` pairs) that carry a
@@ -19,6 +26,21 @@ const MIN_SECRET_LENGTH = 6;
  */
 const SENSITIVE_KEY =
   /(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?|api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)/i;
+
+/**
+ * Names of build arguments that carry a known-public release variable, such
+ * as a version, a commit or a build date. These are the only literal build
+ * arguments that are not hidden from error text by default.
+ */
+const PUBLIC_KEY =
+  /(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha|git-?head|git-?commit|commit|revision|build-?date|build-?time|channel)(?:[^a-z]|$)/i;
+
+/**
+ * Values too common to hide when only the place made them secret: hiding
+ * `production` or `true` from an error would make it unreadable.
+ */
+const COMMON_VALUE =
+  /^(?:true|false|yes|no|on|off|production|development|test|latest|debug|release)$/i;
 
 /**
  * Flags whose value is a credential, such as `--auth-token` or `--password`.
@@ -83,89 +105,165 @@ function assignmentOf(
 }
 
 /**
+ * The password of a `user:password@host` cache reference in one piece of a
+ * cache spec. The piece is cut at its last `@` first, so the pattern only
+ * ever scans the text before it, once.
+ *
+ * @param piece One comma-separated piece of a cache spec.
+ * @returns The password, or undefined when the piece has none.
+ */
+function cachePassword(piece: string): string | undefined {
+  const at = piece.lastIndexOf('@');
+  if (at < 0) {
+    return undefined;
+  }
+  return /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i.exec(
+    piece.slice(0, at),
+  )?.[1];
+}
+
+/**
+ * Where a `--secret` mount gets its value: the environment variable named by
+ * `env=` and the file named by `src=` or `source=`.
+ *
+ * @param spec     The `--secret` specification (`id=npm,env=TOKEN`).
+ * @param env      The environment docker runs with.
+ * @param readFile Reads a file, or returns undefined when it cannot.
+ * @returns The values the mount will carry.
+ */
+function mountSecrets(
+  spec: string,
+  env: Readonly<Record<string, string | undefined>>,
+  readFile: (path: string) => string | undefined,
+): readonly (string | undefined)[] {
+  return spec.split(',').map((piece) => {
+    const at = piece.indexOf('=');
+    const name = piece.slice(0, at);
+    const value = piece.slice(at + 1);
+    if (at < 0) {
+      return undefined;
+    }
+    if (name === 'env') {
+      return Object.hasOwn(env, value) ? env[value] : undefined;
+    }
+    if (name === 'src' || name === 'source') {
+      return readFile(value)?.trim();
+    }
+    return undefined;
+  });
+}
+
+/**
  * Credentials hidden inside an argument that is not a build argument:
- * `key=value` pairs whose key names a credential (`secret_access_key=...` in
- * a cache spec), the password of `user:password@host` in a cache spec, and
- * the value of a flag that names a credential (`--auth-token`).
+ * `key=value` pairs whose key names a credential (`secret_access_key=...`,
+ * `--auth-token=...`), the password of `user:password@host` in a cache spec,
+ * the value of a flag that names a credential (`--auth-token`), and what a
+ * `--secret` mount reads from the environment or a file.
  *
  * @param arg      The argument.
  * @param previous The argument before it.
+ * @param env      The environment docker runs with.
+ * @param readFile Reads a file, or returns undefined when it cannot.
  * @returns The credential values found.
  */
 function embeddedSecrets(
   arg: string,
   previous: string | undefined,
-): readonly string[] {
-  // Split first and match each piece with anchored patterns, so a long
-  // argument cannot make a pattern backtrack.
+  env: Readonly<Record<string, string | undefined>>,
+  readFile: (path: string) => string | undefined,
+): readonly (string | undefined)[] {
   const pieces = arg.split(',');
-  const pairs = pieces.flatMap((piece) => {
+  const pairs = pieces.map((piece) => {
     const at = piece.indexOf('=');
-    return at > 0 && SENSITIVE_KEY.test(piece.slice(0, at))
-      ? [piece.slice(at + 1)]
-      : [];
+    const key = piece.slice(0, at);
+    // `--secret=id=...` only points at a secret; its sources are read below.
+    return at > 0 && key !== '--secret' && SENSITIVE_KEY.test(key)
+      ? piece.slice(at + 1)
+      : undefined;
   });
   const cache =
     (previous !== undefined && CACHE_FLAG.test(previous)) ||
     /^--cache-(?:from|to)=/.test(arg);
-  const userinfo = cache
-    ? pieces.flatMap((piece) => {
-        const password =
-          /(?:^|=)(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:]+:([^\s/@]+)@/i.exec(
-            piece,
-          )?.[1];
-        return password === undefined ? [] : [password];
-      })
-    : [];
+  const passwords = cache ? pieces.map(cachePassword) : [];
   const flagValue =
     previous !== undefined && SENSITIVE_FLAG.test(previous) ? [arg] : [];
-  const joinedFlag = /^(--[^=]+)=([\s\S]*)$/.exec(arg);
-  const joinedValue =
-    joinedFlag?.[1] !== undefined &&
-    joinedFlag[2] !== undefined &&
-    SENSITIVE_FLAG.test(joinedFlag[1])
-      ? [joinedFlag[2]]
-      : [];
-  return [...pairs, ...userinfo, ...flagValue, ...joinedValue];
+  const mount =
+    previous === '--secret' ? arg : /^--secret=(.*)$/.exec(arg)?.[1];
+  const mounted = mount === undefined ? [] : mountSecrets(mount, env, readFile);
+  return [...pairs, ...passwords, ...flagValue, ...mounted];
 }
 
 /**
- * Every secret value that a docker command carries: the value of a build
- * argument whose name looks like a credential, the value of any build
- * argument that docker takes from the environment, and credentials inside
- * flag values and cache specs. Other build arguments (versions, dates, tags)
- * are deliberately not secrets, since hiding them would make the log
- * unreadable.
+ * The value of a build argument that is worth hiding, with the shortest
+ * length at which it is scrubbed. A literal value is hidden by default, the
+ * way a credential would be, unless its name is a known-public release
+ * variable or the value is a common word; a value docker takes from the
+ * environment is looked up there first.
  *
- * @param args Docker arguments.
- * @param env  The environment docker runs with.
- * @returns The distinct values worth hiding, longest first.
+ * @param assignment The build argument.
+ * @param env        The environment docker runs with.
+ * @returns The value and its length floor, or undefined when it is public.
+ */
+function assignedSecret(
+  assignment: Assignment,
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly value: string; readonly floor: number } | undefined {
+  const { key } = assignment;
+  const sensitive = SENSITIVE_KEY.test(key);
+  if (!sensitive && PUBLIC_KEY.test(key)) {
+    return undefined;
+  }
+  const value =
+    assignment.value ?? (Object.hasOwn(env, key) ? env[key] : undefined);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (sensitive) {
+    return { value, floor: MIN_SECRET_LENGTH };
+  }
+  if (COMMON_VALUE.test(value)) {
+    return undefined;
+  }
+  return { value, floor: MIN_DEFAULT_LENGTH };
+}
+
+/**
+ * Every secret value that a docker command carries: literal build arguments
+ * (all of them, except known-public release variables and common words),
+ * build arguments that docker takes from the environment, credentials inside
+ * flag values and cache specs, what `--secret` mounts read from the
+ * environment or from files, and the text sent on stdin. Versions, tags and
+ * digests are not build arguments and are never hidden.
+ *
+ * @param args     Docker arguments.
+ * @param env      The environment docker runs with.
+ * @param readFile Reads a file named by `--secret src=`, or returns undefined
+ *                 when it cannot.
+ * @param input    Text written to stdin, such as a registry password.
+ * @returns The distinct values worth hiding.
  */
 export function secretsIn(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
+  readFile: (path: string) => string | undefined = () => undefined,
+  input?: string,
 ): readonly string[] {
   const found = args.flatMap((arg, index) => {
     const previous = args[index - 1];
     const assignment = assignmentOf(arg, previous);
-    const assigned =
-      assignment === undefined
-        ? []
-        : assignment.value === undefined
-          ? [
-              Object.hasOwn(env, assignment.key)
-                ? env[assignment.key]
-                : undefined,
-            ]
-          : SENSITIVE_KEY.test(assignment.key)
-            ? [assignment.value]
-            : [];
-    return [...assigned, ...embeddedSecrets(arg, previous)];
+    const assigned = assignment ? assignedSecret(assignment, env) : undefined;
+    const explicit = embeddedSecrets(arg, previous, env, readFile).flatMap(
+      (value) =>
+        value === undefined ? [] : [{ value, floor: MIN_SECRET_LENGTH }],
+    );
+    return assigned ? [assigned, ...explicit] : explicit;
   });
-  return [...new Set(found)].filter(
-    (value): value is string =>
-      value !== undefined && value.length >= MIN_SECRET_LENGTH,
-  );
+  const sent =
+    input === undefined ? [] : [{ value: input, floor: MIN_SECRET_LENGTH }];
+  const values = [...found, ...sent]
+    .filter(({ value, floor }) => value.length >= floor)
+    .map(({ value }) => value);
+  return [...new Set(values)];
 }
 
 /**

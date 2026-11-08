@@ -1,10 +1,20 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import {
   assertDockerAvailable,
   dockerRun,
   type DockerRun,
 } from '../../src/lib/docker-run.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
+import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 
 const spy = dockerSpy();
 
@@ -27,6 +37,8 @@ function setup(
     log,
   };
 }
+
+afterEach(removeTempDirs);
 
 beforeEach(() => {
   spy.mockReset();
@@ -94,7 +106,7 @@ describe('dockerRun', () => {
       ]);
 
       expect(log).toHaveBeenCalledWith(
-        'Executing: docker build --build-arg TOKEN=*** --build-arg FLAG --set *.args.TOKEN=*** --set image.tags=repo:1',
+        'Executing: docker build --build-arg TOKEN=[redacted] --build-arg FLAG --set *.args.TOKEN=[redacted] --set image.tags=repo:1',
       );
       expect(spy.mock.calls[0][0]).toContain('TOKEN=s3cr3t');
     });
@@ -105,7 +117,7 @@ describe('dockerRun', () => {
       docker(['buildx', 'bake', '--set', '*.args.TOKEN=abc.args.k=tail']);
 
       expect(log).toHaveBeenCalledWith(
-        'Executing: docker buildx bake --set *.args.TOKEN=***',
+        'Executing: docker buildx bake --set *.args.TOKEN=[redacted]',
       );
     });
 
@@ -119,7 +131,7 @@ describe('dockerRun', () => {
       ]);
 
       expect(log).toHaveBeenCalledWith(
-        'Executing: docker build --build-arg=TOKEN=*** --set=*.args.TOKEN=***',
+        'Executing: docker build --build-arg=TOKEN=[redacted] --set=*.args.TOKEN=[redacted]',
       );
     });
 
@@ -144,7 +156,7 @@ describe('dockerRun', () => {
       );
       expect(log).toHaveBeenNthCalledWith(
         2,
-        'Executing: docker login -u *** --password-stdin',
+        'Executing: docker login -u [redacted] --password-stdin',
       );
     });
 
@@ -219,8 +231,100 @@ describe('dockerRun', () => {
       });
 
       expect(() => docker(['build', '--build-arg', 'TOKEN=s3cr3t'])).toThrow(
-        'Command failed: docker build --build-arg TOKEN=***\n#6 [2/2] RUN echo "using [redacted]" && false',
+        'Command failed: docker build --build-arg TOKEN=[redacted]\n#6 [2/2] RUN echo "using [redacted]" && false',
       );
+    });
+
+    it('scrubs what a --secret mount reads from the environment or a file', () => {
+      const log = jest.fn();
+      const docker = dockerRun({
+        cwd: '/work',
+        env: { GITHUB_ACTIONS: 'false', MYSECRET: 'MountSecretVal777' },
+        timeoutMs: 1000,
+        logger: { log },
+        run: runnerOf(spy),
+        readFile: (file) =>
+          file === 'tok.txt' ? 'FileSecretVal888\n' : undefined,
+      });
+      spy.mockImplementation(() => {
+        throw failure('secretmount=MountSecretVal777 file=FileSecretVal888');
+      });
+
+      expect(() =>
+        docker([
+          'build',
+          '--secret',
+          'id=a,env=MYSECRET',
+          '--secret=id=b,src=tok.txt',
+        ]),
+      ).toThrow(/\nsecretmount=\[redacted\] file=\[redacted\]$/);
+    });
+
+    it('reads --secret files relative to the working directory by default', () => {
+      const dir = makeTempDir();
+      fs.writeFileSync(path.join(dir, 'tok.txt'), 'FileSecretVal888');
+      const docker = dockerRun({
+        cwd: dir,
+        env: { GITHUB_ACTIONS: 'false' },
+        timeoutMs: 1000,
+        logger: { log: jest.fn() },
+        run: runnerOf(spy),
+      });
+      spy.mockImplementation(() => {
+        throw failure('file=FileSecretVal888');
+      });
+
+      expect(() => docker(['build', '--secret', 'id=b,src=tok.txt'])).toThrow(
+        /file=\[redacted\]$/,
+      );
+      expect(() => docker(['build', '--secret', 'id=b,src=missing'])).toThrow(
+        /file=FileSecretVal888$/,
+      );
+    });
+
+    it('scrubs the text sent on stdin', () => {
+      const { docker } = setup();
+      spy.mockImplementation(() => {
+        throw failure('unauthorized: bad password registry-password');
+      });
+
+      expect(() =>
+        docker(['login', '-u', 'user'], 'registry-password'),
+      ).toThrow(/\nunauthorized: bad password \[redacted\]$/);
+    });
+
+    it('scrubs a literal build arg whatever its name, but not public ones', () => {
+      const { docker } = setup();
+      spy.mockImplementation(() => {
+        throw failure('pat=PatValueABCDEF12 ver=22.1.0');
+      });
+
+      expect(() =>
+        docker([
+          'build',
+          '--build-arg',
+          'GH_PAT=PatValueABCDEF12',
+          '--build-arg',
+          'NODE_VERSION=22.1.0',
+        ]),
+      ).toThrow(/\npat=\[redacted\] ver=22\.1\.0$/);
+    });
+
+    it('scrubs a short value only when its name says it is a credential', () => {
+      const { docker } = setup();
+      spy.mockImplementation(() => {
+        throw failure('tok=ab12 other=cd34');
+      });
+
+      expect(() =>
+        docker([
+          'build',
+          '--build-arg',
+          'NPM_TOKEN=ab12',
+          '--build-arg',
+          'OTHER=cd34',
+        ]),
+      ).toThrow(/\ntok=\[redacted\] other=cd34$/);
     });
 
     it('scrubs a build arg that docker takes from the environment', () => {
@@ -234,7 +338,7 @@ describe('dockerRun', () => {
       );
     });
 
-    it('does not take an unrelated build arg for a secret', () => {
+    it('keeps public release variables and common words readable', () => {
       const { docker } = setup();
       spy.mockImplementation(() => {
         throw failure('exporting sha256:abcdef0123 as 1.2.3');
@@ -246,7 +350,9 @@ describe('dockerRun', () => {
           '--build-arg',
           'VERSION=1.2.3',
           '--build-arg',
-          'A=abcdef',
+          'NODE_VERSION=22.1.0',
+          '--build-arg',
+          'DEBUG=production',
         ]),
       ).toThrow(/\nexporting sha256:abcdef0123 as 1\.2\.3$/);
     });
@@ -341,7 +447,7 @@ describe('dockerRun', () => {
       });
 
       expect(() => docker(['build', '--build-arg', 'TOKEN=s3cr3t'])).toThrow(
-        /^Command failed: docker build --build-arg TOKEN=\*\*\*$/,
+        /^Command failed: docker build --build-arg TOKEN=\[redacted\]$/,
       );
     });
 

@@ -3,6 +3,8 @@ import { maskArgs, scrub, secretsIn } from '../../src/lib/secrets.js';
 
 describe('secretsIn', () => {
   const env = { FROM_ENV_TOKEN: 'ENVSECRET99', VERSION: '1.2.3.4.5' };
+  const readFile = (file: string): string | undefined =>
+    file === '/run/token' ? 'FILESECRET1\n' : undefined;
 
   it.each([
     [['build', '--build-arg', 'NPM_TOKEN=abc123xyz'], ['abc123xyz']],
@@ -13,11 +15,18 @@ describe('secretsIn', () => {
     [['build', '--build-arg', 'NPM_TOKEN=a=b.args.c=d1'], ['a=b.args.c=d1']],
     [['build', '--build-arg', 'FLAG'], []],
     [['build', '--build-arg', 'FROM_ENV_TOKEN'], ['ENVSECRET99']],
-    [['build', '--build-arg', 'VERSION'], ['1.2.3.4.5']],
+    [['build', '--build-arg', 'VERSION'], []],
+    [['build', '--build-arg', 'NODE_VERSION=22.1.0'], []],
+    [['build', '--build-arg', 'GIT_COMMIT=abcdef0123456'], []],
+    [['build', '--build-arg', 'GH_PAT=PatValueABCDEF12'], ['PatValueABCDEF12']],
+    [['build', '--build-arg', 'DEBUG=production'], []],
+    [['build', '--build-arg', 'APP_MODE=prod-eu1'], ['prod-eu1']],
+    [['build', '--build-arg', 'SHORT=abc12'], []],
+    [['build', '--build-arg', 'NPM_TOKEN=ab12'], ['ab12']],
+    [['build', '--build-arg', 'NPM_TOKEN=ab1'], []],
     [['build', '--build-arg', 'MISSING'], []],
-    [['build', '--build-arg', 'NPM_TOKEN=short'], []],
     [['build', '--build-arg', 'VERSION=abcdefgh'], []],
-    [['build', '--build-arg', 'AUTHORS=abcdefgh'], []],
+    [['build', '--build-arg', 'AUTHORS=abcdefgh'], ['abcdefgh']],
     [['build', '--build-arg', 'ssh_key=abcdefgh'], ['abcdefgh']],
     [
       ['build', '--cache-from', 'type=s3,secret_access_key=KEY123abc,bucket=b'],
@@ -37,15 +46,44 @@ describe('secretsIn', () => {
     ],
     [['build', '--auth-token', 'TOK123abc'], ['TOK123abc']],
     [['build', '--password=PW123abcd'], ['PW123abcd']],
+    [['build', '--secret', 'id=npm,env=FROM_ENV_TOKEN'], ['ENVSECRET99']],
+    [['build', '--secret=id=npm,env=FROM_ENV_TOKEN'], ['ENVSECRET99']],
+    [['build', '--secret', 'id=npm,env=UNSET'], []],
+    [['build', '--secret', 'id=npm,src=/run/token'], ['FILESECRET1']],
+    [['build', '--secret', 'id=npm,source=/run/token'], ['FILESECRET1']],
+    [['build', '--secret', 'id=npm,src=/missing'], []],
+    [['build', '--secret', 'id=npm,type=file'], []],
+    [['build', '--secret', 'id'], []],
     [['build', '--secret', 'id=npm,src=/home/x/.npmrc'], []],
     [['build', '--tag', 'repo:1.2.3@sha256:abcdef'], []],
     [['login', 'ghcr.io', '-u', 'someuser1', '--password-stdin'], []],
   ])('finds the secrets in %j', (args, expected) => {
-    expect(secretsIn(args, env)).toEqual(expected);
+    expect(secretsIn(args, env, readFile)).toEqual(expected);
   });
 
   it('ignores an inherited member of the environment', () => {
     expect(secretsIn(['build', '--build-arg', 'constructor'], {})).toEqual([]);
+  });
+
+  it('reads no files unless it is given a reader', () => {
+    expect(secretsIn(['build', '--secret', 'id=a,src=/run/token'], {})).toEqual(
+      [],
+    );
+  });
+
+  it('includes what is sent on stdin', () => {
+    expect(secretsIn(['login'], {}, undefined, 'registry-password')).toEqual([
+      'registry-password',
+    ]);
+    expect(secretsIn(['login'], {}, undefined, 'abc')).toEqual([]);
+  });
+
+  it('scans a long cache spec in linear time', () => {
+    const started = performance.now();
+
+    secretsIn(['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`], {});
+
+    expect(performance.now() - started).toBeLessThan(2_000);
   });
 
   it('lists each value once', () => {
@@ -88,7 +126,12 @@ describe('maskArgs', () => {
   it('masks build-argument values by position, however short', () => {
     expect(
       maskArgs(['build', '--build-arg', 'N=1', '--build-arg=M=2']),
-    ).toEqual(['build', '--build-arg', 'N=***', '--build-arg=M=***']);
+    ).toEqual([
+      'build',
+      '--build-arg',
+      'N=[redacted]',
+      '--build-arg=M=[redacted]',
+    ]);
   });
 
   it('keeps arguments that are not assignments', () => {
@@ -100,13 +143,13 @@ describe('maskArgs', () => {
   it('masks a bake build argument from its first =', () => {
     expect(maskArgs(['--set', '*.args.K=v.args.x=y'])).toEqual([
       '--set',
-      '*.args.K=***',
+      '*.args.K=[redacted]',
     ]);
   });
 
   it('masks the user of a registry login', () => {
     expect(
       maskArgs(['login', 'h', '-u', 'someone', '--password-stdin']),
-    ).toEqual(['login', 'h', '-u', '***', '--password-stdin']);
+    ).toEqual(['login', 'h', '-u', '[redacted]', '--password-stdin']);
   });
 });

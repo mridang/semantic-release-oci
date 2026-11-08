@@ -3,8 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Bake, parseBakeDigest, type BakeOptions } from '../../src/lib/bake.js';
 import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
-import { dockerSpy } from '../utils/runner.js';
-import { runnerOf } from '../utils/runner.js';
+import { dockerSpy, runnerOf } from '../utils/runner.js';
 import { dockerRun } from '../../src/lib/docker-run.js';
 
 afterEach(removeTempDirs);

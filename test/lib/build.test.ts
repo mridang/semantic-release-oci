@@ -137,6 +137,14 @@ describe('Build.run', () => {
     expect(Build.run(docker, 'app', 'id1', BUILD).digest).toBe('abc123def456');
   });
 
+  it('takes the last digest when several lines name one', () => {
+    spy.mockReturnValue(
+      '#9 exporting manifest sha256:aaaa1111\n#9 writing image sha256:bbbb2222\n',
+    );
+
+    expect(Build.run(docker, 'app', 'id1', BUILD).digest).toBe('bbbb2222');
+  });
+
   it('has an empty digest when the output names none', () => {
     spy.mockReturnValue('Step 1/1 : FROM alpine\n');
 

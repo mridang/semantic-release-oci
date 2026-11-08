@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
@@ -27,6 +29,23 @@ export interface DockerRunOptions {
   readonly logger: Pick<VerifyConditionsContext['logger'], 'log'>;
   /** Runs the program; only tests pass one. */
   readonly run?: Runner;
+  /** Reads a file named by `--secret src=`; only tests pass one. */
+  readonly readFile?: (file: string) => string | undefined;
+}
+
+/**
+ * Reads a text file, relative to the working directory.
+ *
+ * @param cwd  Directory relative paths are resolved against.
+ * @param file Path of the file.
+ * @returns The contents, or undefined when the file cannot be read.
+ */
+function readText(cwd: string, file: string): string | undefined {
+  try {
+    return fs.readFileSync(path.resolve(cwd, file), 'utf8');
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -89,13 +108,15 @@ function detailsOf(error: unknown): readonly string[] {
  */
 export function dockerRun(options: DockerRunOptions): DockerRun {
   const run = options.run ?? defaultRun;
+  const readFile =
+    options.readFile ?? ((file: string) => readText(options.cwd, file));
   const env = { ...process.env, ...options.env };
   return (args, input) => {
     const nul = args.findIndex((arg) => arg.includes('\0'));
     if (nul >= 0) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
     }
-    const secrets = secretsIn(args, env);
+    const secrets = secretsIn(args, env, readFile, input);
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env['GITHUB_ACTIONS'] === 'true') {
