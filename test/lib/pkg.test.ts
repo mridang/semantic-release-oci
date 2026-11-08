@@ -46,6 +46,24 @@ describe('readPkg', () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
+  it('should return null when package.json is not an object', () => {
+    const tmpDir = makeTempDir();
+    fs.writeFileSync(path.join(tmpDir, 'package.json'), '"just a string"');
+
+    expect(readPkg(tmpDir)).toBeNull();
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('should ignore a name that is not a string', () => {
+    const tmpDir = makeTempDir();
+    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ "name": 7 }');
+
+    expect(readPkg(tmpDir)?.name).toBeUndefined();
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
   it('should return null when package.json is malformed', () => {
     const tmpDir = makeTempDir();
     fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ not valid json');

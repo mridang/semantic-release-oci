@@ -12,10 +12,9 @@ import os from 'os';
 import { BakeStrategy, parseBakeDigest } from '../../src/lib/bake-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type {
-  BuildParams,
-  SemanticReleaseContext,
-} from '../../src/lib/types.js';
+import type { BuildParams } from '../../src/lib/types.js';
+import type { VerifyConditionsContext } from 'semantic-release';
+import { stepContext } from '../utils/context.js';
 
 function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
@@ -27,28 +26,20 @@ function writeBakeFile(dir: string): string {
   return file;
 }
 
-function makeContext(
-  cwd: string,
-  overrides: Partial<SemanticReleaseContext> = {},
-): SemanticReleaseContext {
-  return {
-    cwd,
-    env: {},
-    logger: { log: jest.fn(), error: jest.fn() },
-    nextRelease: { version: '1.2.3' },
-    options: { dryRun: false },
-    ...overrides,
-  };
-}
-
 function makeStrategy(
   cwd: string,
-  pluginConfig: Partial<OciPluginConfig> = {},
-  contextOverrides: Partial<SemanticReleaseContext> = {},
-): { strategy: BakeStrategy; context: SemanticReleaseContext } {
-  const context = makeContext(cwd, contextOverrides);
-  const config = new OciConfig(pluginConfig as OciPluginConfig, context.env);
-  return { strategy: new BakeStrategy(config, context), context };
+  pluginConfig: OciPluginConfig = {},
+  contextOverrides: Readonly<Record<string, unknown>> = {},
+): { strategy: BakeStrategy; context: VerifyConditionsContext } {
+  const context = stepContext(cwd, {}, contextOverrides);
+  const config = new OciConfig(pluginConfig, context.env);
+  const bake = config.getDockerBake() ?? {
+    file: 'docker-bake.hcl',
+    group: undefined,
+    target: undefined,
+    imageTarget: '*',
+  };
+  return { strategy: new BakeStrategy(config, context, bake), context };
 }
 
 const baseParams: BuildParams = {
@@ -94,6 +85,16 @@ describe('parseBakeDigest', () => {
 
   it('should return empty string when the metadata file is missing', () => {
     expect(parseBakeDigest('/nonexistent/meta.json', '*')).toBe('');
+  });
+
+  it('should return empty string when the metadata is not an object', () => {
+    const tmpDir = makeTempDir();
+    const file = path.join(tmpDir, 'meta.json');
+    fs.writeFileSync(file, '["sha256:abc"]');
+
+    expect(parseBakeDigest(file, '*')).toBe('');
+
+    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return empty string on malformed metadata', () => {
@@ -167,7 +168,7 @@ describe('BakeStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('buildx');
       expect(args[1]).toBe('bake');
       expect(args).toContain('--file');
@@ -188,7 +189,7 @@ describe('BakeStrategy', () => {
 
       strategy.build({ ...baseParams, tagTemplates: ['latest', '1.2.3'] });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const tagSets = args.filter((a) => a.startsWith('image.tags='));
       expect(tagSets).toEqual([
         'image.tags=my-app:latest',
@@ -207,7 +208,7 @@ describe('BakeStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const tagSet = args.find((a) => a.startsWith('*.tags='));
       expect(tagSet).toContain('my-app:1.2.3');
 
@@ -223,7 +224,7 @@ describe('BakeStrategy', () => {
 
       strategy.build({ ...baseParams, isDryRun: true });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.output=type=cacheonly');
       expect(args.some((a) => a.startsWith('image.tags='))).toBe(false);
 
@@ -240,7 +241,7 @@ describe('BakeStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.args.VERSION=1.2.3');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -256,7 +257,7 @@ describe('BakeStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args.some((a) => a.includes('FROM_ENV'))).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -271,7 +272,7 @@ describe('BakeStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args[args.length - 1]).toBe('image');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -280,7 +281,7 @@ describe('BakeStrategy', () => {
     it('should capture the digest from the metadata file', () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
-      execMock.mockImplementation((args: string[]): string => {
+      execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
         fs.writeFileSync(
           args[idx + 1],
@@ -306,7 +307,7 @@ describe('BakeStrategy', () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       let metadataPath = '';
-      execMock.mockImplementation((args: string[]): string => {
+      execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
         fs.writeFileSync(
@@ -333,7 +334,7 @@ describe('BakeStrategy', () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       let metadataPath = '';
-      execMock.mockImplementation((args: string[]): string => {
+      execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
         fs.writeFileSync(metadataPath, '{}');

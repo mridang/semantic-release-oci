@@ -12,11 +12,9 @@ import os from 'os';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type {
-  BuildParams,
-  BuildState,
-  SemanticReleaseContext,
-} from '../../src/lib/types.js';
+import type { BuildParams, BuildState } from '../../src/lib/types.js';
+import type { VerifyConditionsContext } from 'semantic-release';
+import { stepContext } from '../utils/context.js';
 
 function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
@@ -26,27 +24,13 @@ function writeDockerfile(dir: string, content = 'FROM alpine'): void {
   fs.writeFileSync(path.join(dir, 'Dockerfile'), content);
 }
 
-function makeContext(
-  cwd: string,
-  overrides: Partial<SemanticReleaseContext> = {},
-): SemanticReleaseContext {
-  return {
-    cwd,
-    env: {},
-    logger: { log: jest.fn(), error: jest.fn() },
-    nextRelease: { version: '1.2.3' },
-    options: { dryRun: false },
-    ...overrides,
-  };
-}
-
 function makeStrategy(
   cwd: string,
-  pluginConfig: Partial<OciPluginConfig> = {},
-  contextOverrides: Partial<SemanticReleaseContext> = {},
-): { strategy: BuildStrategy; context: SemanticReleaseContext } {
-  const context = makeContext(cwd, contextOverrides);
-  const config = new OciConfig(pluginConfig as OciPluginConfig, context.env);
+  pluginConfig: OciPluginConfig = {},
+  contextOverrides: Readonly<Record<string, unknown>> = {},
+): { strategy: BuildStrategy; context: VerifyConditionsContext } {
+  const context = stepContext(cwd, {}, contextOverrides);
+  const config = new OciConfig(pluginConfig, context.env);
   return { strategy: new BuildStrategy(config, context), context };
 }
 
@@ -119,7 +103,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('build');
       expect(args).toContain('--quiet');
       expect(args.some((a) => a === 'my-app:latest')).toBe(true);
@@ -137,7 +121,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain(`my-app:${baseParams.buildId}`);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -153,7 +137,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('buildx');
       expect(args[1]).toBe('build');
       expect(args).toContain('--platform');
@@ -174,7 +158,7 @@ describe('BuildStrategy', () => {
 
       strategy.build({ ...baseParams, isDryRun: true });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).not.toContain('--push');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -191,7 +175,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('buildx');
       expect(args).not.toContain('--push');
 
@@ -208,7 +192,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
       expect(tagArgs.every((t) => !t.match(/:[a-f0-9]{16,}$/))).toBe(true);
 
@@ -225,7 +209,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--pull');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -242,7 +226,7 @@ describe('BuildStrategy', () => {
         isDryRun: true,
       });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
       expect(tagArgs.length).toBe(1);
       expect(tagArgs[0]).not.toContain('1.2.3');
@@ -261,7 +245,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('VERSION=1.2.3');
       expect(args).toContain('STATIC=hello');
 
@@ -278,7 +262,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const buildArgIdx = args.indexOf('GITHUB_TOKEN');
       expect(buildArgIdx).toBeGreaterThan(-1);
       expect(args[buildArgIdx - 1]).toBe('--build-arg');
@@ -296,7 +280,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--no-cache');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -312,7 +296,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--cache-from');
       expect(args).toContain('type=local,src=/tmp/cache');
 
@@ -329,7 +313,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--target');
       expect(args).toContain('production');
       expect(args).toContain('--pull');
@@ -348,7 +332,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--provenance');
       expect(args).toContain('false');
 
@@ -365,7 +349,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('-t');
       expect(args).toContain('production');
 
@@ -382,7 +366,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const labelIndices = args.reduce<number[]>(
         (acc, a, i) => (a === '--label' ? [...acc, i] : acc),
         [],
@@ -404,7 +388,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const idx = args.indexOf('-t');
       expect(idx).toBeGreaterThan(-1);
       expect(args[idx + 1]).toBe('mytag');
@@ -422,7 +406,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--cache-from');
       expect(args).toContain('type=inline');
 
@@ -457,7 +441,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).not.toContain('--quiet');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -474,7 +458,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain(path.resolve(tmpDir, 'build/Dockerfile'));
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -491,7 +475,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain(path.resolve(tmpDir, 'app'));
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -507,7 +491,7 @@ describe('BuildStrategy', () => {
 
       strategy.build(baseParams);
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args).toContain('--network=host');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -520,7 +504,7 @@ describe('BuildStrategy', () => {
 
       strategy.build({ ...baseParams, tagTemplates: [] });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
       expect(tagArgs.length).toBe(1);
 
@@ -534,7 +518,7 @@ describe('BuildStrategy', () => {
 
       strategy.build({ ...baseParams, repo: '', tagTemplates: ['latest'] });
 
-      const args = execMock.mock.calls[0][0] as string[];
+      const args = execMock.mock.calls[0][0];
       expect(args.some((a) => a === ':latest')).toBe(true);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -605,7 +589,7 @@ describe('BuildStrategy', () => {
 
       strategy.finalizePublish(makeState());
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
 
@@ -621,7 +605,7 @@ describe('BuildStrategy', () => {
 
       strategy.finalizePublish(makeState({ isBuildx: true }));
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(0);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
       expect(allArgs.filter((a) => a[0] === 'rmi').length).toBe(0);
@@ -632,14 +616,14 @@ describe('BuildStrategy', () => {
     it('should remove images when dockerAutoClean is true', () => {
       const tmpDir = makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
-      execMock.mockImplementation((args: string[]) => {
+      execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return 'img1\nimg2\n';
         return '';
       });
 
       strategy.finalizePublish(makeState());
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(true);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -648,14 +632,14 @@ describe('BuildStrategy', () => {
     it('should skip rmi when no images are found during cleanup', () => {
       const tmpDir = makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
-      execMock.mockImplementation((args: string[]) => {
+      execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return '   \n';
         return '';
       });
 
       strategy.finalizePublish(makeState());
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -666,7 +650,7 @@ describe('BuildStrategy', () => {
       const { strategy, context } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
       });
-      execMock.mockImplementation((args: string[]) => {
+      execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return 'img1\n';
         if (args[0] === 'rmi') throw new Error('permission denied');
         return '';
@@ -689,7 +673,7 @@ describe('BuildStrategy', () => {
 
       strategy.finalizePublish(makeState());
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
       expect(allArgs.some((a) => a[0] === 'images')).toBe(false);
 
@@ -702,14 +686,14 @@ describe('BuildStrategy', () => {
         dockerImage: 'my-app',
         dockerPublish: false,
       });
-      execMock.mockImplementation((args: string[]) => {
+      execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return 'img1\n';
         return '';
       });
 
       strategy.finalizePublish(makeState());
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
 
       fs.rmSync(tmpDir, { recursive: true });

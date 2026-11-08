@@ -1,11 +1,8 @@
 import { execSync } from 'child_process';
 import SemanticReleaseError from '@semantic-release/error';
+import type { VerifyConditionsContext } from 'semantic-release';
 import { OciConfig } from '../plugin-config.js';
-import type {
-  BuildParams,
-  BuildState,
-  SemanticReleaseContext,
-} from './types.js';
+import type { BuildParams, BuildResult, BuildState } from './types.js';
 
 /**
  * Options accepted by {@link ImageStrategy.exec}.
@@ -26,13 +23,20 @@ interface ExecOptions {
  */
 export abstract class ImageStrategy {
   /**
+   * The directory every command runs in.
+   */
+  protected readonly cwd: string;
+
+  /**
    * @param config  Resolved plugin configuration.
    * @param context Semantic-release context with cwd, env, and logger.
    */
   constructor(
     protected readonly config: OciConfig,
-    protected readonly context: SemanticReleaseContext,
-  ) {}
+    protected readonly context: VerifyConditionsContext,
+  ) {
+    this.cwd = context.cwd ?? process.cwd();
+  }
 
   /**
    * Executes a Docker CLI command via `child_process.execSync`, using the
@@ -47,7 +51,7 @@ export abstract class ImageStrategy {
     const cmd = ['docker', ...args].join(' ');
     this.context.logger.log(`Executing: ${cmd}`);
     const result = execSync(cmd, {
-      cwd: this.context.cwd,
+      cwd: this.cwd,
       encoding: 'utf8',
       input: options.input,
       stdio: options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
@@ -67,7 +71,7 @@ export abstract class ImageStrategy {
    */
   protected renderTemplate(
     template: string,
-    vars: Record<string, string | number | undefined>,
+    vars: Readonly<Record<string, string | number | undefined>>,
   ): string {
     return template.replace(
       /\{\{(\w+)\}\}/g,
@@ -88,8 +92,8 @@ export abstract class ImageStrategy {
    */
   protected renderTags(
     templates: readonly string[],
-    vars: Record<string, string | number | undefined>,
-  ): string[] {
+    vars: Readonly<Record<string, string | number | undefined>>,
+  ): readonly string[] {
     return templates.map((t) => this.renderTemplate(t, vars)).filter(Boolean);
   }
 
@@ -121,7 +125,9 @@ export abstract class ImageStrategy {
     if (!this.config.isLoginEnabled() || !this.config.hasCredentials()) {
       return;
     }
-    if (!this.config.hasCompleteCredentials()) {
+    const user = this.config.getRegistryUser();
+    const password = this.config.getRegistryPassword();
+    if (user === undefined || password === undefined) {
       throw new SemanticReleaseError(
         'Docker login requires both DOCKER_REGISTRY_USER and DOCKER_REGISTRY_PASSWORD (or GITHUB_TOKEN) environment variables.',
         'EAUTH',
@@ -133,12 +139,12 @@ export abstract class ImageStrategy {
       'login',
       ...(registry ? [registry] : []),
       '-u',
-      this.config.getRegistryUser()!,
+      user,
       '--password-stdin',
     ];
 
     this.exec(loginArgs, {
-      input: this.config.getRegistryPassword(),
+      input: password,
       timeout: this.config.getDockerTimeout(),
     });
 
@@ -160,7 +166,7 @@ export abstract class ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  abstract build(params: BuildParams): { sha256: string; tags: string[] };
+  abstract build(params: BuildParams): BuildResult;
 
   /**
    * Performs any tag/push/cleanup that must happen during publish. No-op

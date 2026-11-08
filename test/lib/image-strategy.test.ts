@@ -8,7 +8,8 @@ import {
 } from '@jest/globals';
 import { execSync } from 'child_process';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type { SemanticReleaseContext } from '../../src/lib/types.js';
+import type { VerifyConditionsContext } from 'semantic-release';
+import { stepContext } from '../utils/context.js';
 
 const execSyncMock = jest.fn<typeof execSync>();
 
@@ -18,25 +19,15 @@ jest.unstable_mockModule('child_process', () => ({
 
 const { BuildStrategy } = await import('../../src/lib/build-strategy.js');
 
-function makeContext(
-  env: Record<string, string | undefined> = {},
-): SemanticReleaseContext {
-  return {
-    cwd: '/work',
-    env,
-    logger: { log: jest.fn(), error: jest.fn() },
-  };
-}
-
 function makeStrategy(
-  pluginConfig: Partial<OciPluginConfig> = {},
-  env: Record<string, string | undefined> = {},
+  pluginConfig: OciPluginConfig = {},
+  env: Record<string, string> = {},
 ): {
   strategy: InstanceType<typeof BuildStrategy>;
-  context: SemanticReleaseContext;
+  context: VerifyConditionsContext;
 } {
-  const context = makeContext(env);
-  const config = new OciConfig(pluginConfig as OciPluginConfig, env);
+  const context = stepContext('/work', env);
+  const config = new OciConfig(pluginConfig, env);
   return { strategy: new BuildStrategy(config, context), context };
 }
 
@@ -73,6 +64,17 @@ describe('ImageStrategy', () => {
           input: 'secret',
           timeout: 1234,
         }),
+      );
+    });
+
+    it('should run in the process cwd when the context has none', () => {
+      const context = stepContext('/work', {}, { cwd: undefined });
+      const strategy = new BuildStrategy(new OciConfig({}, {}), context);
+
+      strategy.exec(['version']);
+
+      expect(execSyncMock.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ cwd: process.cwd() }),
       );
     });
 

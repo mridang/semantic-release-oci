@@ -11,7 +11,7 @@ import path from 'path';
 import os from 'os';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import { ImageStrategy } from '../src/lib/image-strategy.js';
-import type { OciPluginConfig } from '../src/plugin-config.js';
+import { stepContext } from './utils/context.js';
 
 function makeTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
@@ -23,32 +23,6 @@ function writePackageJson(dir: string, name: string): void {
 
 function writeDockerfile(dir: string, content = 'FROM alpine'): void {
   fs.writeFileSync(path.join(dir, 'Dockerfile'), content);
-}
-
-function makeContext(
-  cwd: string,
-  env: Record<string, string> = {},
-  overrides: Record<string, unknown> = {},
-) {
-  return {
-    cwd,
-    env,
-    logger: {
-      log: jest.fn(),
-      error: jest.fn(),
-    },
-    nextRelease: {
-      version: '1.2.3',
-      gitTag: 'v1.2.3',
-      gitHead: 'abc1234',
-      channel: undefined,
-      type: 'minor',
-    },
-    options: {
-      dryRun: false,
-    },
-    ...overrides,
-  };
 }
 
 describe('semantic-release-oci', () => {
@@ -71,9 +45,9 @@ describe('semantic-release-oci', () => {
         throw new Error('spawn docker ENOENT');
       });
 
-      await expect(
-        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
-      ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
+      await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
+        expect.objectContaining({ code: 'ENOENT' }),
+      );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -82,9 +56,9 @@ describe('semantic-release-oci', () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
 
-      await expect(
-        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
-      ).rejects.toThrow(expect.objectContaining({ code: 'EINVAL' }));
+      await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
+        expect.objectContaining({ code: 'EINVAL' }),
+      );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -93,9 +67,9 @@ describe('semantic-release-oci', () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, 'my-app');
 
-      await expect(
-        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
-      ).rejects.toThrow(expect.objectContaining({ code: 'ENOENT' }));
+      await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
+        expect.objectContaining({ code: 'ENOENT' }),
+      );
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -110,8 +84,8 @@ describe('semantic-release-oci', () => {
 
       await expect(
         verifyConditions(
-          { dockerBake: { group: 'release' } } as OciPluginConfig,
-          makeContext(tmpDir),
+          { dockerBake: { group: 'release' } },
+          stepContext(tmpDir),
         ),
       ).resolves.toBeUndefined();
 
@@ -124,10 +98,7 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
 
       await expect(
-        verifyConditions(
-          { dockerLogin: false } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
+        verifyConditions({ dockerLogin: false }, stepContext(tmpDir)),
       ).resolves.toBeUndefined();
 
       expect(execMock).toHaveBeenCalledTimes(1);
@@ -143,8 +114,8 @@ describe('semantic-release-oci', () => {
 
       await expect(
         verifyConditions(
-          { dockerLogin: false } as OciPluginConfig,
-          makeContext(tmpDir, {
+          { dockerLogin: false },
+          stepContext(tmpDir, {
             DOCKER_REGISTRY_USER: 'user',
             DOCKER_REGISTRY_PASSWORD: 'pass',
           }),
@@ -162,10 +133,7 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
 
       await expect(
-        verifyConditions(
-          { dockerImage: 'custom-image' } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
+        verifyConditions({ dockerImage: 'custom-image' }, stepContext(tmpDir)),
       ).resolves.toBeUndefined();
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -177,7 +145,7 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
 
       await expect(
-        verifyConditions({} as OciPluginConfig, makeContext(tmpDir)),
+        verifyConditions({}, stepContext(tmpDir)),
       ).resolves.toBeUndefined();
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -187,9 +155,9 @@ describe('semantic-release-oci', () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await verifyConditions({} as OciPluginConfig, context);
+      await verifyConditions({}, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Verified: image="my-app", dockerfile=/),
@@ -207,9 +175,9 @@ describe('semantic-release-oci', () => {
       execMock.mockReturnValue(
         'writing image sha256:abcdef1234567890abcdef1234567890\n',
       );
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await prepare({ dockerImage: 'my-app' }, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringContaining('sha: abcdef123456'),
@@ -218,13 +186,50 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should render the default channel, reported as null, as empty', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      const context = stepContext(
+        tmpDir,
+        {},
+        {
+          nextRelease: {
+            version: '1.2.3',
+            gitTag: 'v1.2.3',
+            gitHead: 'abc1234',
+            channel: null,
+            type: 'minor',
+          },
+        },
+      );
+
+      await prepare(
+        { dockerImage: 'my-app', dockerTags: ['{{channel}}x'] },
+        context,
+      );
+
+      expect(execMock.mock.calls[0][0]).toContain('my-app:x');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should resolve paths from the process cwd when the context has none', async () => {
+      const context = stepContext('/unused', {}, { cwd: undefined });
+
+      await prepare({ dockerImage: 'my-app' }, context);
+
+      expect(execMock.mock.calls[0][0]).toContain(
+        path.resolve(process.cwd(), 'Dockerfile'),
+      );
+    });
+
     it('should fall back to the buildId when no sha is in build output', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('Step 1/1 : FROM alpine\n');
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await prepare({ dockerImage: 'my-app' } as OciPluginConfig, context);
+      await prepare({ dockerImage: 'my-app' }, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/sha: [a-f0-9]{20}/),
@@ -237,9 +242,9 @@ describe('semantic-release-oci', () => {
       const tmpDir = makeTempDir();
       writePackageJson(tmpDir, '@myorg/my-app');
       writeDockerfile(tmpDir);
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await prepare({} as OciPluginConfig, context);
+      await prepare({}, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Docker image built: myorg\/my-app:/),
@@ -251,28 +256,13 @@ describe('semantic-release-oci', () => {
     it('should fall back to an empty image name with no config or package.json', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await prepare({ dockerTags: ['latest'] } as OciPluginConfig, context);
+      await prepare({ dockerTags: ['latest'] }, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Docker image built: :/),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
-    });
-
-    it('should handle missing nextRelease gracefully', async () => {
-      const tmpDir = makeTempDir();
-      writeDockerfile(tmpDir);
-      execMock.mockReturnValue('');
-
-      await expect(
-        prepare(
-          { dockerImage: 'my-app', dockerTags: ['latest'] } as OciPluginConfig,
-          makeContext(tmpDir, {}, { nextRelease: undefined }),
-        ),
-      ).resolves.toBeUndefined();
 
       fs.rmSync(tmpDir, { recursive: true });
     });
@@ -285,10 +275,7 @@ describe('semantic-release-oci', () => {
       });
 
       await expect(
-        prepare(
-          { dockerImage: 'my-app' } as OciPluginConfig,
-          makeContext(tmpDir),
-        ),
+        prepare({ dockerImage: 'my-app' }, stepContext(tmpDir)),
       ).rejects.toThrow('build failed');
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -299,12 +286,9 @@ describe('semantic-release-oci', () => {
     it('should skip publish when no build state exists', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
 
-      await publish(
-        { dockerImage: 'no-build-state' } as OciPluginConfig,
-        context,
-      );
+      await publish({ dockerImage: 'no-build-state' }, context);
 
       expect(execMock).not.toHaveBeenCalled();
       expect(context.logger.log).toHaveBeenCalledWith(
@@ -320,15 +304,15 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
-      const context = makeContext(tmpDir);
-      await prepare({} as OciPluginConfig, context);
+      const context = stepContext(tmpDir);
+      await prepare({}, context);
 
       execMock.mockClear();
       execMock.mockReturnValue('');
 
-      await publish({} as OciPluginConfig, context);
+      await publish({}, context);
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
 
@@ -340,11 +324,11 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
-      const context = makeContext(tmpDir);
+      const context = stepContext(tmpDir);
       const cfg = {
         dockerTags: ['latest'],
         dockerAutoClean: false,
-      } as OciPluginConfig;
+      };
       await prepare(cfg, context);
 
       execMock.mockClear();
@@ -352,7 +336,7 @@ describe('semantic-release-oci', () => {
 
       await publish(cfg, context);
 
-      const allArgs = execMock.mock.calls.map((c) => c[0] as string[]);
+      const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(1);
 
       fs.rmSync(tmpDir, { recursive: true });
@@ -364,13 +348,13 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
-      const context = makeContext(tmpDir);
-      await prepare({ dockerAutoClean: false } as OciPluginConfig, context);
+      const context = stepContext(tmpDir);
+      await prepare({ dockerAutoClean: false }, context);
 
       execMock.mockClear();
       execMock.mockReturnValue('');
 
-      await publish({ dockerAutoClean: false } as OciPluginConfig, context);
+      await publish({ dockerAutoClean: false }, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Published: myorg\/my-app \(tags: /),
@@ -385,19 +369,13 @@ describe('semantic-release-oci', () => {
       writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
-      const context = makeContext(tmpDir);
-      await prepare(
-        { dockerImage: 'my-app', dockerAutoClean: false } as OciPluginConfig,
-        context,
-      );
+      const context = stepContext(tmpDir);
+      await prepare({ dockerImage: 'my-app', dockerAutoClean: false }, context);
 
       execMock.mockClear();
       execMock.mockReturnValue('');
 
-      await publish(
-        { dockerImage: 'my-app', dockerAutoClean: false } as OciPluginConfig,
-        context,
-      );
+      await publish({ dockerImage: 'my-app', dockerAutoClean: false }, context);
 
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Published: my-app \(tags: /),

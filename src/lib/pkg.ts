@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { isRecord, stringAt } from '../utils/object.js';
 
 const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
 
@@ -26,11 +27,12 @@ export function parsePkgName(pkgname: string): {
  * @param cwd Directory to read `package.json` from.
  * @returns   The parsed package, or `null` when absent or unparseable.
  */
-export function readPkg(cwd: string): { name?: string } | null {
+export function readPkg(cwd: string): { readonly name?: string } | null {
   const pkgPath = path.join(cwd, 'package.json');
   if (!fs.existsSync(pkgPath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { name?: string };
+    const pkg: unknown = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return isRecord(pkg) ? { name: stringAt(pkg, 'name') } : null;
   } catch {
     return null;
   }

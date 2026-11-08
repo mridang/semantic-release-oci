@@ -2,10 +2,10 @@ import { describe, it, expect } from '@jest/globals';
 import { OciConfig, OciPluginConfig } from '../src/plugin-config.js';
 
 function makeConfig(
-  overrides: Partial<OciPluginConfig> = {},
+  overrides: OciPluginConfig = {},
   env: Record<string, string | undefined> = {},
 ): OciConfig {
-  return new OciConfig(overrides as OciPluginConfig, env);
+  return new OciConfig(overrides, env);
 }
 
 describe('OciConfig', () => {
@@ -229,7 +229,6 @@ describe('OciConfig', () => {
         },
       );
       expect(config.hasCredentials()).toBe(true);
-      expect(config.hasCompleteCredentials()).toBe(true);
       expect(config.getRegistryUser()).toBe('user');
       expect(config.getRegistryPassword()).toBe('pass');
     });
@@ -242,7 +241,6 @@ describe('OciConfig', () => {
           GITHUB_TOKEN: 'gh-token',
         },
       );
-      expect(config.hasCompleteCredentials()).toBe(true);
       expect(config.getRegistryPassword()).toBe('gh-token');
     });
 
@@ -254,13 +252,12 @@ describe('OciConfig', () => {
         },
       );
       expect(config.hasCredentials()).toBe(true);
-      expect(config.hasCompleteCredentials()).toBe(false);
+      expect(config.getRegistryPassword()).toBeUndefined();
     });
 
     it('should detect no credentials', () => {
       const config = makeConfig({}, {});
       expect(config.hasCredentials()).toBe(false);
-      expect(config.hasCompleteCredentials()).toBe(false);
     });
   });
 });

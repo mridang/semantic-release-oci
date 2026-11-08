@@ -1,10 +1,15 @@
 import crypto from 'crypto';
 import * as actions from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
-import { OciConfig, OciPluginConfig } from './plugin-config.js';
+import type {
+  PrepareContext,
+  PublishContext,
+  VerifyConditionsContext,
+} from 'semantic-release';
+import { OciConfig, type OciPluginConfig } from './plugin-config.js';
 import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
 import { selectStrategy } from './lib/strategy.js';
-import type { BuildState, SemanticReleaseContext } from './lib/types.js';
+import type { BuildState } from './lib/types.js';
 
 const buildStates = new Map<string, BuildState>();
 
@@ -20,9 +25,9 @@ const buildStates = new Map<string, BuildState>();
  */
 function resolveImage(
   config: OciConfig,
-  context: SemanticReleaseContext,
-): { imageName: string | undefined; repo: string } {
-  const pkg = readPkg(context.cwd);
+  context: VerifyConditionsContext,
+): { readonly imageName: string | undefined; readonly repo: string } {
+  const pkg = readPkg(context.cwd ?? process.cwd());
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? undefined;
   const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
@@ -44,7 +49,7 @@ function resolveImage(
  */
 export async function verifyConditions(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: VerifyConditionsContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
@@ -76,25 +81,26 @@ export async function verifyConditions(
  */
 export async function prepare(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: PrepareContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const { repo } = resolveImage(config, context);
-  const isDryRun = context.options?.dryRun === true;
+  const isDryRun = context.options.dryRun === true;
 
-  const version = context.nextRelease?.version ?? '';
-  const [major = '', minor = '', patch = ''] = version.split('.');
-  const vars: Record<string, string | number | undefined> = {
-    version,
+  const { nextRelease } = context;
+  const [major = '', minor = '', patch = ''] = nextRelease.version.split('.');
+  const vars = {
+    version: nextRelease.version,
     major,
     minor,
     patch,
-    gitTag: context.nextRelease?.gitTag ?? '',
-    gitHead: context.nextRelease?.gitHead ?? '',
-    channel: context.nextRelease?.channel ?? '',
-    type: context.nextRelease?.type ?? '',
+    gitTag: nextRelease.gitTag,
+    gitHead: nextRelease.gitHead,
+    // semantic-release reports the default channel as null at runtime.
+    channel: nextRelease.channel ?? '',
+    type: nextRelease.type,
     now: new Date().toISOString(),
-  };
+  } satisfies Record<string, string | number | undefined>;
 
   const buildId = crypto.randomBytes(10).toString('hex');
   const isBuildx = config.isBakeEnabled() || config.isBuildxEnabled();
@@ -129,7 +135,7 @@ export async function prepare(
  */
 export async function publish(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: PublishContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const { repo } = resolveImage(config, context);
@@ -156,4 +162,4 @@ export async function publish(
   );
 }
 
-export default { verifyConditions, prepare, publish };
+export default { verifyConditions, prepare, publish } as const;

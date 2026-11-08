@@ -1,4 +1,5 @@
 import type { Config } from 'semantic-release';
+import { toList } from './utils/list.js';
 
 /**
  * Raw plugin configuration as provided by the user in their
@@ -29,6 +30,16 @@ export interface OciPluginConfig extends Config {
     readonly target?: string;
     readonly imageTarget?: string;
   };
+}
+
+/**
+ * Docker Bake settings with their defaults applied.
+ */
+export interface BakeSettings {
+  readonly file: string;
+  readonly group: string | undefined;
+  readonly target: string | undefined;
+  readonly imageTarget: string;
 }
 
 /**
@@ -98,9 +109,7 @@ export class OciConfig {
       '{{major}}-latest',
       '{{version}}',
     ];
-    return typeof tags === 'string'
-      ? tags.split(/\s*,\s*/).filter(Boolean)
-      : [...tags];
+    return toList(tags);
   }
 
   /**
@@ -131,9 +140,7 @@ export class OciConfig {
    */
   getDockerPlatform(): readonly string[] {
     const platform = this.config.dockerPlatform ?? [];
-    return typeof platform === 'string'
-      ? platform.split(/\s*,\s*/).filter(Boolean)
-      : [...platform];
+    return toList(platform);
   }
 
   /**
@@ -210,9 +217,7 @@ export class OciConfig {
   getDockerBuildCacheFrom(): readonly string[] {
     const cacheFrom = this.config.dockerBuildCacheFrom;
     if (!cacheFrom) return [];
-    return typeof cacheFrom === 'string'
-      ? cacheFrom.split(/\s*,\s*/).filter(Boolean)
-      : [...cacheFrom];
+    return toList(cacheFrom);
   }
 
   /**
@@ -245,14 +250,7 @@ export class OciConfig {
    *
    * @returns Normalized bake settings, or `undefined` when not set.
    */
-  getDockerBake():
-    | {
-        readonly file: string;
-        readonly group: string | undefined;
-        readonly target: string | undefined;
-        readonly imageTarget: string;
-      }
-    | undefined {
+  getDockerBake(): BakeSettings | undefined {
     const bake = this.config.dockerBake;
     if (!bake) {
       return undefined;
@@ -301,19 +299,6 @@ export class OciConfig {
   hasCredentials(): boolean {
     return (
       this.getRegistryUser() !== undefined ||
-      this.getRegistryPassword() !== undefined
-    );
-  }
-
-  /**
-   * Whether both username and password are present, forming a
-   * complete credential pair suitable for `docker login`.
-   *
-   * @returns `true` when both are set.
-   */
-  hasCompleteCredentials(): boolean {
-    return (
-      this.getRegistryUser() !== undefined &&
       this.getRegistryPassword() !== undefined
     );
   }

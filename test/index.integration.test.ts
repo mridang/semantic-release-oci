@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
+import { stepContext } from './utils/context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,13 +80,9 @@ describe('semantic-release-oci (integration, real Docker)', () => {
     const cfg: OciPluginConfig = {
       dockerImage: 'test-app',
       dockerLogin: false,
-    } as OciPluginConfig;
-
-    const ctx = {
-      logger,
-      cwd: workdir,
-      env: {},
     };
+
+    const ctx = stepContext(workdir, {}, { logger });
 
     await expect(verifyConditions(cfg, ctx)).resolves.toBeUndefined();
   }, 30_000);
@@ -98,15 +95,16 @@ describe('semantic-release-oci (integration, real Docker)', () => {
       dockerLogin: false,
       dockerBuildQuiet: false,
       dockerAutoClean: false,
-    } as OciPluginConfig;
-
-    const ctx = {
-      logger,
-      cwd: workdir,
-      env: {},
-      nextRelease: { version: '1.0.0', gitTag: 'v1.0.0', gitHead: 'abc123' },
-      options: { dryRun: false },
     };
+
+    const ctx = stepContext(
+      workdir,
+      {},
+      {
+        logger,
+        nextRelease: { version: '1.0.0', gitTag: 'v1.0.0', gitHead: 'abc123' },
+      },
+    );
 
     await expect(prepare(cfg, ctx)).resolves.toBeUndefined();
   }, 120_000);
@@ -119,15 +117,16 @@ describe('semantic-release-oci (integration, real Docker)', () => {
       dockerLogin: false,
       dockerBuildQuiet: false,
       dockerAutoClean: false,
-    } as OciPluginConfig;
-
-    const ctx = {
-      logger,
-      cwd: workdir,
-      env: {},
-      nextRelease: { version: '2.0.0', gitTag: 'v2.0.0', gitHead: 'def456' },
-      options: { dryRun: false },
     };
+
+    const ctx = stepContext(
+      workdir,
+      {},
+      {
+        logger,
+        nextRelease: { version: '2.0.0', gitTag: 'v2.0.0', gitHead: 'def456' },
+      },
+    );
 
     await verifyConditions(cfg, ctx);
     await prepare(cfg, ctx);
@@ -156,15 +155,16 @@ describe('semantic-release-oci (integration, real Docker)', () => {
       dockerLogin: false,
       dockerBuildQuiet: false,
       dockerAutoClean: true,
-    } as OciPluginConfig;
-
-    const ctx = {
-      logger,
-      cwd: workdir,
-      env: {},
-      nextRelease: { version: '3.0.0', gitTag: 'v3.0.0', gitHead: 'ghi789' },
-      options: { dryRun: false },
     };
+
+    const ctx = stepContext(
+      workdir,
+      {},
+      {
+        logger,
+        nextRelease: { version: '3.0.0', gitTag: 'v3.0.0', gitHead: 'ghi789' },
+      },
+    );
 
     await prepare(cfg, ctx);
     await publish(cfg, ctx);

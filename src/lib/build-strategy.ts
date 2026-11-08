@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import SemanticReleaseError from '@semantic-release/error';
 import { ImageStrategy } from './image-strategy.js';
-import type { BuildParams, BuildState } from './types.js';
+import type { BuildParams, BuildResult, BuildState } from './types.js';
 
 const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
 
@@ -19,10 +19,7 @@ export class BuildStrategy extends ImageStrategy {
    * @returns A log label naming the verified Dockerfile.
    */
   verifyTarget(): string {
-    const dockerfile = path.resolve(
-      this.context.cwd,
-      this.config.getDockerFile(),
-    );
+    const dockerfile = path.resolve(this.cwd, this.config.getDockerFile());
     if (!fs.existsSync(dockerfile)) {
       throw new SemanticReleaseError(
         `Dockerfile not found at ${dockerfile}`,
@@ -38,8 +35,8 @@ export class BuildStrategy extends ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): { sha256: string; tags: string[] } {
-    const { config, context } = this;
+  build(params: BuildParams): BuildResult {
+    const { config, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const isBuildx = config.isBuildxEnabled();
@@ -86,8 +83,8 @@ export class BuildStrategy extends ImageStrategy {
           ]
         : []),
       '-f',
-      path.resolve(context.cwd, config.getDockerFile()),
-      path.resolve(context.cwd, config.getDockerContext()),
+      path.resolve(cwd, config.getDockerFile()),
+      path.resolve(cwd, config.getDockerContext()),
     ];
 
     const stdout = this.exec(args, {

@@ -5,10 +5,8 @@ import os from 'os';
 import path from 'path';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type {
-  BuildParams,
-  SemanticReleaseContext,
-} from '../../src/lib/types.js';
+import type { BuildParams } from '../../src/lib/types.js';
+import { stepContext } from '../utils/context.js';
 
 /**
  * Whether a real `docker buildx bake` is reachable on this host. The
@@ -66,18 +64,19 @@ function makeStrategy(
   cwd: string,
   bakeConfig: OciPluginConfig['dockerBake'],
 ): BakeStrategy {
-  const context: SemanticReleaseContext = {
+  const context = stepContext(
     cwd,
-    env: {},
-    logger: { log: () => undefined, error: () => undefined },
-    nextRelease: { version: '1.2.3' },
-    options: { dryRun: false },
-  };
-  const config = new OciConfig(
-    { dockerBake: bakeConfig } as OciPluginConfig,
-    context.env,
+    {},
+    {
+      logger: { log: () => undefined, error: () => undefined },
+    },
   );
-  return new BakeStrategy(config, context);
+  const config = new OciConfig({ dockerBake: bakeConfig }, context.env);
+  const bake = config.getDockerBake();
+  if (!bake) {
+    throw new Error('dockerBake must be configured for the bake strategy');
+  }
+  return new BakeStrategy(config, context, bake);
 }
 
 const describeOrSkip = dockerAvailable ? describe : describe.skip;

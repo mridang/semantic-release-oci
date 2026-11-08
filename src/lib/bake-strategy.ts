@@ -2,8 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import SemanticReleaseError from '@semantic-release/error';
+import type { VerifyConditionsContext } from 'semantic-release';
+import type { BakeSettings, OciConfig } from '../plugin-config.js';
+import { isRecord, stringAt } from '../utils/object.js';
 import { ImageStrategy } from './image-strategy.js';
-import type { BuildParams } from './types.js';
+import type { BuildParams, BuildResult } from './types.js';
 
 /**
  * Reads the digest of the built image from a `docker buildx bake`
@@ -23,17 +26,17 @@ export function parseBakeDigest(
     return '';
   }
   try {
-    const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const digestKey = 'containerimage.digest';
+    const meta: unknown = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    if (!isRecord(meta)) {
+      return '';
+    }
+    const digestOf = (target: unknown): string | undefined =>
+      isRecord(target) ? stringAt(target, 'containerimage.digest') : undefined;
+    const preferred = imageTarget !== '*' ? meta[imageTarget] : undefined;
     const entry =
-      imageTarget !== '*' && meta[imageTarget]
-        ? meta[imageTarget]
-        : Object.values(meta).find((t) => typeof t?.[digestKey] === 'string');
-    const digest = entry?.[digestKey];
-    return typeof digest === 'string' ? digest.replace(/^sha256:/, '') : '';
+      preferred ||
+      Object.values(meta).find((target) => digestOf(target) !== undefined);
+    return digestOf(entry)?.replace(/^sha256:/, '') ?? '';
   } catch {
     return '';
   }
@@ -50,20 +53,33 @@ export function parseBakeDigest(
  */
 export class BakeStrategy extends ImageStrategy {
   /**
+   * @param config  Resolved plugin configuration.
+   * @param context Semantic-release context with cwd, env, and logger.
+   * @param bake    The resolved `dockerBake` settings.
+   */
+  constructor(
+    config: OciConfig,
+    context: VerifyConditionsContext,
+    private readonly bake: BakeSettings,
+  ) {
+    super(config, context);
+  }
+
+  /**
    * Verifies a `group` or `target` is configured and the bake file
    * exists.
    *
    * @returns A log label naming the verified bake file.
    */
   verifyTarget(): string {
-    const bake = this.config.getDockerBake()!;
+    const { bake } = this;
     if (!bake.group && !bake.target) {
       throw new SemanticReleaseError(
         'dockerBake requires either "group" or "target" to be set.',
         'EINVAL',
       );
     }
-    const bakeFile = path.resolve(this.context.cwd, bake.file);
+    const bakeFile = path.resolve(this.cwd, bake.file);
     if (!fs.existsSync(bakeFile)) {
       throw new SemanticReleaseError(
         `Bake file not found at ${bakeFile}`,
@@ -81,11 +97,10 @@ export class BakeStrategy extends ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): { sha256: string; tags: string[] } {
-    const { config, context } = this;
+  build(params: BuildParams): BuildResult {
+    const { config, context, bake, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
-    const bake = config.getDockerBake()!;
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
 
     const dockerArgs = Object.entries(config.getDockerArgs());
@@ -108,7 +123,7 @@ export class BakeStrategy extends ImageStrategy {
       'buildx',
       'bake',
       '--file',
-      path.resolve(context.cwd, bake.file),
+      path.resolve(cwd, bake.file),
       '--metadata-file',
       metadataFile,
       ...(isDryRun ? ['--set', '*.output=type=cacheonly'] : tagOverride),
