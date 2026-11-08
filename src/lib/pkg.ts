@@ -1,6 +1,10 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { isRecord, stringAt } from '../utils/object.js';
 
+/**
+ * Splits a package name into its optional scope and the rest.
+ */
 const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
 
 /**
@@ -10,12 +14,14 @@ const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
  * @returns       The parsed `scope` and `name`, each `null` when absent.
  */
 export function parsePkgName(pkgname: string): {
-  scope: string | null;
-  name: string | null;
+  /** The scope without its `@`, or null. */
+  readonly scope: string | null;
+  /** The bare name, or null. */
+  readonly name: string | null;
 } {
   const match = NAME_EXP.exec(pkgname);
   if (!match) return { scope: null, name: null };
-  return { scope: match[1] ?? null, name: match[2] ?? null };
+  return { scope: match[1] ?? null, name: match[2] };
 }
 
 /**
@@ -26,11 +32,12 @@ export function parsePkgName(pkgname: string): {
  * @param cwd Directory to read `package.json` from.
  * @returns   The parsed package, or `null` when absent or unparseable.
  */
-export function readPkg(cwd: string): { name?: string } | null {
+export function readPkg(cwd: string): { readonly name?: string } | null {
   const pkgPath = path.join(cwd, 'package.json');
   if (!fs.existsSync(pkgPath)) return null;
   try {
-    return JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { name?: string };
+    const pkg: unknown = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return isRecord(pkg) ? { name: stringAt(pkg, 'name') } : null;
   } catch {
     return null;
   }

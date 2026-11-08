@@ -1,12 +1,52 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import * as actions from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
-import { OciConfig, OciPluginConfig } from './plugin-config.js';
+import type {
+  PrepareContext,
+  PublishContext,
+  VerifyConditionsContext,
+} from 'semantic-release';
+import { OciConfig, type OciPluginConfig } from './plugin-config.js';
 import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
 import { selectStrategy } from './lib/strategy.js';
-import type { BuildState, SemanticReleaseContext } from './lib/types.js';
+import type { BuildState } from './lib/types.js';
 
-const buildStates = new Map<string, BuildState>();
+/**
+ * Builds in flight between `prepare` and `publish`. A key whose value is
+ * `undefined` marks a `prepare` that started and has not produced a build.
+ */
+const buildStates = new Map<string, BuildState | undefined>();
+
+/**
+ * Keys of builds that `publish` has already used, so that a second publish of
+ * the same release can be told from a publish that has no build at all.
+ */
+const published = new Set<string>();
+
+/**
+ * The key a build is stored under between `prepare` and `publish`. It names
+ * the plugin entry (a hash of its whole configuration), the release version,
+ * the directory and the repository, so two entries for the same image, two
+ * releases, or two directories can never pick up each other's build.
+ *
+ * @param pluginConfig Raw plugin configuration of this entry.
+ * @param context      Semantic-release context of the step.
+ * @param cwd          Directory the release runs in.
+ * @param repo         Full image repository path.
+ * @returns            A key unique to that combination.
+ */
+function stateKey(
+  pluginConfig: OciPluginConfig,
+  context: PrepareContext,
+  cwd: string,
+  repo: string,
+): string {
+  const entry = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(pluginConfig))
+    .digest('hex');
+  return JSON.stringify([cwd, repo, context.nextRelease.version, entry]);
+}
 
 /**
  * Resolves the image name and full repository path from config, falling
@@ -15,14 +55,14 @@ const buildStates = new Map<string, BuildState>();
  * repository path treats a missing name as empty.
  *
  * @param config  Resolved plugin configuration.
- * @param context Semantic-release context (for cwd).
+ * @param cwd     Directory the release runs in.
  * @returns       The resolved image name and repository path.
  */
 function resolveImage(
   config: OciConfig,
-  context: SemanticReleaseContext,
-): { imageName: string | undefined; repo: string } {
-  const pkg = readPkg(context.cwd);
+  cwd: string,
+): { readonly imageName: string | undefined; readonly repo: string } {
+  const pkg = readPkg(cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? undefined;
   const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
@@ -44,14 +84,14 @@ function resolveImage(
  */
 export async function verifyConditions(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: VerifyConditionsContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
 
-  strategy.verifyDocker();
+  await strategy.verifyDocker();
 
-  const { imageName } = resolveImage(config, context);
+  const { imageName } = resolveImage(config, strategy.cwd);
 
   if (!imageName) {
     throw new SemanticReleaseError(
@@ -62,7 +102,7 @@ export async function verifyConditions(
 
   const verifiedTarget = strategy.verifyTarget();
 
-  strategy.login();
+  await strategy.login();
 
   context.logger.log(`Verified: image="${imageName}", ${verifiedTarget}`);
 }
@@ -76,30 +116,35 @@ export async function verifyConditions(
  */
 export async function prepare(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: PrepareContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const { repo } = resolveImage(config, context);
-  const isDryRun = context.options?.dryRun === true;
+  const strategy = selectStrategy(config, context);
+  const { repo } = resolveImage(config, strategy.cwd);
+  const key = stateKey(pluginConfig, context, strategy.cwd, repo);
+  // A build that fails must not leave the previous one to be published.
+  buildStates.set(key, undefined);
+  published.delete(key);
+  const isDryRun = context.options.dryRun === true;
 
-  const version = context.nextRelease?.version ?? '';
-  const [major = '', minor = '', patch = ''] = version.split('.');
-  const vars: Record<string, string | number | undefined> = {
-    version,
+  const { nextRelease } = context;
+  const [major, minor = '', patch = ''] = nextRelease.version.split('.');
+  const vars = {
+    version: nextRelease.version,
     major,
     minor,
     patch,
-    gitTag: context.nextRelease?.gitTag ?? '',
-    gitHead: context.nextRelease?.gitHead ?? '',
-    channel: context.nextRelease?.channel ?? '',
-    type: context.nextRelease?.type ?? '',
+    gitTag: nextRelease.gitTag,
+    gitHead: nextRelease.gitHead,
+    // semantic-release reports the default channel as null at runtime.
+    channel: nextRelease.channel ?? '',
+    type: nextRelease.type,
     now: new Date().toISOString(),
-  };
+  } satisfies Record<string, string | number | undefined>;
 
   const buildId = crypto.randomBytes(10).toString('hex');
-  const isBuildx = config.isBakeEnabled() || config.isBuildxEnabled();
 
-  const { sha256, tags } = selectStrategy(config, context).build({
+  const { sha256, tags } = await strategy.build({
     repo,
     tagTemplates: config.getDockerTags(),
     vars,
@@ -108,13 +153,14 @@ export async function prepare(
   });
   const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
-  buildStates.set(repo, {
+  buildStates.set(key, {
     sha,
     sha256,
     buildId,
     tags,
+    version: nextRelease.version,
     repo,
-    isBuildx,
+    isBuildx: strategy.isBuildx,
   });
 
   context.logger.log(`Docker image built: ${repo}:${buildId} (sha: ${sha})`);
@@ -129,18 +175,36 @@ export async function prepare(
  */
 export async function publish(
   pluginConfig: OciPluginConfig,
-  context: SemanticReleaseContext,
+  context: PublishContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const { repo } = resolveImage(config, context);
-  const state = buildStates.get(repo);
+  const strategy = selectStrategy(config, context);
+  const { repo } = resolveImage(config, strategy.cwd);
+  const key = stateKey(pluginConfig, context, strategy.cwd, repo);
 
+  if (!buildStates.has(key)) {
+    if (published.has(key)) {
+      context.logger.log(
+        'This release was already published. Skipping publish.',
+      );
+      return;
+    }
+    throw new SemanticReleaseError(
+      'No image was built by prepare for this release and plugin configuration, so there is nothing to publish. The prepare and publish steps must use the same configuration.',
+      'ENOBUILD',
+    );
+  }
+  const state = buildStates.get(key);
   if (!state) {
-    context.logger.log('No build state found. Skipping publish.');
-    return;
+    throw new SemanticReleaseError(
+      'The image build for this release did not complete, so there is nothing to publish.',
+      'ENOBUILD',
+    );
   }
 
-  selectStrategy(config, context).finalizePublish(state);
+  await strategy.finalizePublish(state);
+  buildStates.delete(key);
+  published.add(key);
 
   try {
     actions.setOutput('docker_image', state.repo);
@@ -156,4 +220,4 @@ export async function publish(
   );
 }
 
-export default { verifyConditions, prepare, publish };
+export default { verifyConditions, prepare, publish } as const;

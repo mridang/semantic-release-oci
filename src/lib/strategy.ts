@@ -1,8 +1,9 @@
+import type { VerifyConditionsContext } from 'semantic-release';
+import type { Runner } from '../utils/exec.js';
 import { OciConfig } from '../plugin-config.js';
 import { BuildStrategy } from './build-strategy.js';
 import { BakeStrategy } from './bake-strategy.js';
 import { ImageStrategy } from './image-strategy.js';
-import type { SemanticReleaseContext } from './types.js';
 
 /**
  * Selects the build strategy for the given configuration: bake mode when
@@ -10,13 +11,16 @@ import type { SemanticReleaseContext } from './types.js';
  *
  * @param config  Resolved plugin configuration.
  * @param context Semantic-release context.
+ * @param run     Runs the docker binary; only tests pass one.
  * @returns       The chosen {@link ImageStrategy}.
  */
 export function selectStrategy(
   config: OciConfig,
-  context: SemanticReleaseContext,
+  context: VerifyConditionsContext,
+  run?: Runner,
 ): ImageStrategy {
-  return config.isBakeEnabled()
-    ? new BakeStrategy(config, context)
-    : new BuildStrategy(config, context);
+  const bake = config.getDockerBake();
+  return bake
+    ? new BakeStrategy(config, context, bake, run)
+    : new BuildStrategy(config, context, run);
 }

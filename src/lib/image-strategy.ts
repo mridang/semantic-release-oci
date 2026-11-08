@@ -1,20 +1,14 @@
-import { execSync } from 'child_process';
 import SemanticReleaseError from '@semantic-release/error';
+import type { VerifyConditionsContext } from 'semantic-release';
 import { OciConfig } from '../plugin-config.js';
-import type {
-  BuildParams,
-  BuildState,
-  SemanticReleaseContext,
-} from './types.js';
-
-/**
- * Options accepted by {@link ImageStrategy.exec}.
- */
-interface ExecOptions {
-  readonly input?: string;
-  readonly stdio?: 'inherit' | 'pipe';
-  readonly timeout?: number;
-}
+import type { Runner } from '../utils/exec.js';
+import {
+  assertDockerAvailable,
+  dockerRun,
+  type DockerRun,
+} from './docker-run.js';
+import { Registry } from './registry.js';
+import type { BuildParams, BuildResult, BuildState } from './types.js';
 
 /**
  * A build mechanism (plain/buildx `docker build`, or `docker buildx
@@ -26,34 +20,39 @@ interface ExecOptions {
  */
 export abstract class ImageStrategy {
   /**
+   * The directory every command runs in.
+   */
+  readonly cwd: string;
+
+  /**
+   * Runs docker commands for the nouns this strategy works with.
+   */
+  protected readonly docker: DockerRun;
+
+  /**
+   * Whether the build step itself pushes the image (buildx and bake), so that
+   * nothing is left to tag, push or clean up at publish time.
+   */
+  abstract readonly isBuildx: boolean;
+
+  /**
    * @param config  Resolved plugin configuration.
    * @param context Semantic-release context with cwd, env, and logger.
+   * @param run     Runs the docker binary; only tests pass one.
    */
   constructor(
     protected readonly config: OciConfig,
-    protected readonly context: SemanticReleaseContext,
-  ) {}
-
-  /**
-   * Executes a Docker CLI command via `child_process.execSync`, using the
-   * context's working directory and logger. Public so tests can spy on
-   * `ImageStrategy.prototype.exec`.
-   *
-   * @param args    Docker arguments, joined onto a leading `docker`.
-   * @param options Execution options (input, stdio, timeout).
-   * @returns       The command's stdout, or an empty string.
-   */
-  exec(args: readonly string[], options: ExecOptions = {}): string {
-    const cmd = ['docker', ...args].join(' ');
-    this.context.logger.log(`Executing: ${cmd}`);
-    const result = execSync(cmd, {
-      cwd: this.context.cwd,
-      encoding: 'utf8',
-      input: options.input,
-      stdio: options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
-      timeout: options.timeout ?? 600_000,
+    protected readonly context: VerifyConditionsContext,
+    run?: Runner,
+  ) {
+    this.cwd = context.cwd ?? process.cwd();
+    this.docker = dockerRun({
+      cwd: this.cwd,
+      env: context.env,
+      timeoutMs: config.getDockerTimeout(),
+      logger: context.logger,
+      run,
     });
-    return typeof result === 'string' ? result : '';
   }
 
   /**
@@ -67,12 +66,13 @@ export abstract class ImageStrategy {
    */
   protected renderTemplate(
     template: string,
-    vars: Record<string, string | number | undefined>,
+    vars: Readonly<Record<string, string | number | undefined>>,
   ): string {
     return template.replace(
       /\{\{(\w+)\}\}/g,
       (_match: string, key: string): string => {
-        const value = vars[key];
+        // Own keys only: `{{constructor}}` must not reach Object.prototype.
+        const value = Object.hasOwn(vars, key) ? vars[key] : undefined;
         return value !== undefined ? String(value) : '';
       },
     );
@@ -80,7 +80,7 @@ export abstract class ImageStrategy {
 
   /**
    * Renders a list of tag templates, dropping any that resolve to an
-   * empty string.
+   * empty string and any that repeat an earlier tag.
    *
    * @param templates Tag template strings.
    * @param vars      Key-value map of replacement values.
@@ -88,9 +88,12 @@ export abstract class ImageStrategy {
    */
   protected renderTags(
     templates: readonly string[],
-    vars: Record<string, string | number | undefined>,
-  ): string[] {
-    return templates.map((t) => this.renderTemplate(t, vars)).filter(Boolean);
+    vars: Readonly<Record<string, string | number | undefined>>,
+  ): readonly string[] {
+    const rendered = templates
+      .map((template) => this.renderTemplate(template, vars))
+      .filter(Boolean);
+    return [...new Set(rendered)];
   }
 
   /**
@@ -99,15 +102,8 @@ export abstract class ImageStrategy {
    * @throws SemanticReleaseError with code `ENOENT` when Docker is
    *         unavailable.
    */
-  verifyDocker(): void {
-    try {
-      this.exec(['version'], { timeout: this.config.getDockerTimeout() });
-    } catch {
-      throw new SemanticReleaseError(
-        'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
-        'ENOENT',
-      );
-    }
+  async verifyDocker(): Promise<void> {
+    await assertDockerAvailable(this.docker);
   }
 
   /**
@@ -117,30 +113,23 @@ export abstract class ImageStrategy {
    * @throws SemanticReleaseError with code `EAUTH` when only partial
    *         credentials are supplied.
    */
-  login(): void {
+  async login(): Promise<void> {
     if (!this.config.isLoginEnabled() || !this.config.hasCredentials()) {
       return;
     }
-    if (!this.config.hasCompleteCredentials()) {
+    const user = this.config.getRegistryUser();
+    const password = this.config.getRegistryPassword();
+    if (user === undefined || password === undefined) {
       throw new SemanticReleaseError(
         'Docker login requires both DOCKER_REGISTRY_USER and DOCKER_REGISTRY_PASSWORD (or GITHUB_TOKEN) environment variables.',
         'EAUTH',
       );
     }
 
-    const registry = this.config.getDockerRegistry();
-    const loginArgs: readonly string[] = [
-      'login',
-      ...(registry ? [registry] : []),
-      '-u',
-      this.config.getRegistryUser()!,
-      '--password-stdin',
-    ];
-
-    this.exec(loginArgs, {
-      input: this.config.getRegistryPassword(),
-      timeout: this.config.getDockerTimeout(),
-    });
+    await new Registry(this.docker, this.config.getDockerRegistry()).login(
+      user,
+      password,
+    );
 
     this.context.logger.log('Docker login successful.');
   }
@@ -160,7 +149,7 @@ export abstract class ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  abstract build(params: BuildParams): { sha256: string; tags: string[] };
+  abstract build(params: BuildParams): Promise<BuildResult>;
 
   /**
    * Performs any tag/push/cleanup that must happen during publish. No-op
@@ -168,5 +157,5 @@ export abstract class ImageStrategy {
    *
    * @param state The stored build state.
    */
-  abstract finalizePublish(state: BuildState): void;
+  abstract finalizePublish(state: BuildState): Promise<void>;
 }

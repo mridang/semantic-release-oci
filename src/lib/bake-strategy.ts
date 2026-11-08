@@ -1,43 +1,13 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
+import type { VerifyConditionsContext } from 'semantic-release';
+import type { BakeSettings, OciConfig } from '../plugin-config.js';
+import type { Runner } from '../utils/exec.js';
+import { Bake } from './bake.js';
 import { ImageStrategy } from './image-strategy.js';
-import type { BuildParams } from './types.js';
-
-/**
- * Reads the digest of the built image from a `docker buildx bake`
- * metadata file. Looks up the configured image target, falling back to
- * the first target that recorded a `containerimage.digest`. The
- * `sha256:` prefix is stripped to match the digest shape used elsewhere.
- *
- * @param metadataPath Path to the bake metadata JSON file.
- * @param imageTarget  Target whose digest is preferred, or `"*"`.
- * @returns The image digest hex, or an empty string when unavailable.
- */
-export function parseBakeDigest(
-  metadataPath: string,
-  imageTarget: string,
-): string {
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
-    return '';
-  }
-  try {
-    const meta = JSON.parse(fs.readFileSync(metadataPath, 'utf8')) as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const digestKey = 'containerimage.digest';
-    const entry =
-      imageTarget !== '*' && meta[imageTarget]
-        ? meta[imageTarget]
-        : Object.values(meta).find((t) => typeof t?.[digestKey] === 'string');
-    const digest = entry?.[digestKey];
-    return typeof digest === 'string' ? digest.replace(/^sha256:/, '') : '';
-  } catch {
-    return '';
-  }
-}
+import type { BuildParams, BuildResult } from './types.js';
 
 /**
  * Build strategy that drives `docker buildx bake`. A single bake group
@@ -50,20 +20,40 @@ export function parseBakeDigest(
  */
 export class BakeStrategy extends ImageStrategy {
   /**
+   * Bake always pushes during the build, through each target's `output`.
+   */
+  readonly isBuildx = true;
+
+  /**
+   * @param config  Resolved plugin configuration.
+   * @param context Semantic-release context with cwd, env, and logger.
+   * @param bake    The resolved `dockerBake` settings.
+   * @param run     Runs the docker binary; only tests pass one.
+   */
+  constructor(
+    config: OciConfig,
+    context: VerifyConditionsContext,
+    private readonly bake: BakeSettings,
+    run?: Runner,
+  ) {
+    super(config, context, run);
+  }
+
+  /**
    * Verifies a `group` or `target` is configured and the bake file
    * exists.
    *
    * @returns A log label naming the verified bake file.
    */
   verifyTarget(): string {
-    const bake = this.config.getDockerBake()!;
+    const { bake } = this;
     if (!bake.group && !bake.target) {
       throw new SemanticReleaseError(
         'dockerBake requires either "group" or "target" to be set.',
         'EINVAL',
       );
     }
-    const bakeFile = path.resolve(this.context.cwd, bake.file);
+    const bakeFile = path.resolve(this.cwd, bake.file);
     if (!fs.existsSync(bakeFile)) {
       throw new SemanticReleaseError(
         `Bake file not found at ${bakeFile}`,
@@ -81,15 +71,13 @@ export class BakeStrategy extends ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): { sha256: string; tags: string[] } {
-    const { config, context } = this;
+  async build(params: BuildParams): Promise<BuildResult> {
+    const { config, context, bake, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
-    const bake = config.getDockerBake()!;
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
 
     const dockerArgs = Object.entries(config.getDockerArgs());
-    const selector = bake.target ?? bake.group;
 
     dockerArgs
       .filter(([, value]) => value === true)
@@ -99,43 +87,26 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const tagOverride = tags.flatMap((tag) => [
-      '--set',
-      `${bake.imageTarget}.tags=${repo}:${tag}`,
-    ]);
-
-    const args: readonly string[] = [
-      'buildx',
-      'bake',
-      '--file',
-      path.resolve(context.cwd, bake.file),
-      '--metadata-file',
+    const baked = await new Bake(this.docker, {
+      file: path.resolve(cwd, bake.file),
       metadataFile,
-      ...(isDryRun ? ['--set', '*.output=type=cacheonly'] : tagOverride),
-      ...dockerArgs
-        .filter(([, value]) => value !== true)
-        .flatMap(([key, value]) => [
-          '--set',
-          `*.args.${key}=${this.renderTemplate(String(value), vars)}`,
-        ]),
-      ...(selector ? [selector] : []),
-    ];
+      imageTarget: bake.imageTarget,
+      tags: tags.map((tag) => `${repo}:${tag}`),
+      dryRun: isDryRun,
+      buildArgs: dockerArgs.flatMap(([key, value]) =>
+        value === true
+          ? []
+          : [{ key, value: this.renderTemplate(String(value), vars) }],
+      ),
+      selector: bake.target ?? bake.group,
+    }).run();
 
-    try {
-      this.exec(args, {
-        stdio: 'pipe',
-        timeout: config.getDockerTimeout(),
-      });
-      const sha256 = parseBakeDigest(metadataFile, bake.imageTarget);
-      return { sha256, tags };
-    } finally {
-      fs.rmSync(metadataFile, { force: true });
-    }
+    return { sha256: baked.digest, tags };
   }
 
   /**
    * Bake pushes during the build via each target's `output`, so there is
    * nothing to tag, push, or clean up at publish time.
    */
-  finalizePublish(): void {}
+  async finalizePublish(): Promise<void> {}
 }

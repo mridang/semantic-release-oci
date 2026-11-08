@@ -93,11 +93,22 @@ All options are case-sensitive and lowercased in the JSON configuration.
   Tag templates with `{{variable}}` substitution. Available variables:
   `version`, `major`, `minor`, `patch`, `gitTag`, `gitHead`, `channel`,
   `type`, `now`. Default: `['latest', '{{major}}-latest', '{{version}}']`.
+  Tags are rendered once each (repeated tags are dropped). Tags that contain
+  the release version are pushed first and the other tags after them in the
+  order given, so a failed push cannot leave `latest` pointing at a release
+  whose version tag is missing. A tag that does not contain the version, such
+  as `sha-{{gitHead}}`, is pushed after the version tags.
 
 - **`dockerArgs` (object, optional):**
   Build arguments as key-value pairs. Values support `{{variable}}`
   templates. Set a value to `true` to pass the key as a build arg
   sourced from the environment.
+  Values are passed to docker literally: docker is started directly and not
+  through a shell, so `$VAR`, `~` and shell quotes in a value (or in
+  `dockerBuildFlags`, `dockerBuildCacheFrom` and the other options) are not
+  expanded or interpreted, and a value containing spaces needs no quoting.
+  Use `{{variable}}` templates or an absolute path where you relied on
+  `$HOME` or `~`.
 
 - **`dockerBuildFlags` (object, optional):**
   Additional docker build flags. Keys are flag names, values are strings,
@@ -208,6 +219,33 @@ via the `docker_image_sha_*` outputs.
 
 Bake mode requires Buildx v0.10 or newer (the `--metadata-file` flag for
 `bake` was added in v0.10; shipped with Docker 23.0+).
+
+## Docker Commands, Secrets and Errors
+
+Docker commands are logged before they run. The value of every build
+argument is masked in that line. In error output, every literal build-argument
+value is also removed, except the value of a known-public release variable
+(names such as `VERSION`, `*_VERSION`, `GIT_COMMIT`, `BUILD_DATE`, `CHANNEL`)
+and common words such as `true` or `production`; values of arguments named
+like a credential (`token`, `secret`, `password`, `key`, `auth`, `cert`,
+`npmrc`) are removed down to four characters, other values down to six. The
+same applies to build arguments that docker reads from the environment
+(`dockerArgs: { NPM_TOKEN: true }`), to credentials in cache specs and in
+flags such as `--auth-token`, to what a `--secret` mount reads from an
+environment variable (`env=`) or a file (`src=`), and to the registry
+password. Each is also removed in its base64 and URL-encoded forms and line by
+line. This is best effort: a secret that a build step transforms in another
+way, such as hashing it, is not recognised, and the user of a registry login
+is masked in the logged command only. On GitHub Actions the values are also
+registered with the runner's log masker; elsewhere nothing is printed for
+that purpose.
+
+Docker runs with this process's environment plus the release context's
+environment (`context.env` wins). A docker command that fails is reported as
+an error with the code `EDOCKER` whose message holds the (masked) command, the
+error code or signal, and what the command wrote to stderr. Output is
+captured, not streamed: a `docker push` prints what it wrote after it has
+finished, and the output of a build is only shown when it fails.
 
 ## GitHub Actions Outputs
 

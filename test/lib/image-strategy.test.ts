@@ -1,197 +1,126 @@
-import {
-  describe,
-  it,
-  expect,
-  jest,
-  beforeEach,
-  afterEach,
-} from '@jest/globals';
-import { execSync } from 'child_process';
+import { describe, it, expect, beforeEach } from '@jest/globals';
+import { BuildStrategy } from '../../src/lib/build-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type { SemanticReleaseContext } from '../../src/lib/types.js';
+import type { VerifyConditionsContext } from 'semantic-release';
+import { stepContext } from '../utils/context.js';
+import { dockerSpy, runnerOf } from '../utils/runner.js';
 
-const execSyncMock = jest.fn<typeof execSync>();
-
-jest.unstable_mockModule('child_process', () => ({
-  execSync: execSyncMock,
-}));
-
-const { BuildStrategy } = await import('../../src/lib/build-strategy.js');
-
-function makeContext(
-  env: Record<string, string | undefined> = {},
-): SemanticReleaseContext {
-  return {
-    cwd: '/work',
-    env,
-    logger: { log: jest.fn(), error: jest.fn() },
-  };
-}
+const execMock = dockerSpy();
 
 function makeStrategy(
-  pluginConfig: Partial<OciPluginConfig> = {},
-  env: Record<string, string | undefined> = {},
+  pluginConfig: OciPluginConfig = {},
+  env: Record<string, string> = {},
 ): {
-  strategy: InstanceType<typeof BuildStrategy>;
-  context: SemanticReleaseContext;
+  strategy: BuildStrategy;
+  context: VerifyConditionsContext;
 } {
-  const context = makeContext(env);
-  const config = new OciConfig(pluginConfig as OciPluginConfig, env);
-  return { strategy: new BuildStrategy(config, context), context };
+  const context = stepContext('/work', env);
+  const config = new OciConfig(pluginConfig, env);
+  return {
+    strategy: new BuildStrategy(config, context, runnerOf(execMock)),
+    context,
+  };
 }
 
 describe('ImageStrategy', () => {
   beforeEach(() => {
-    execSyncMock.mockReset();
-    execSyncMock.mockReturnValue('build output\n');
-  });
-
-  afterEach(() => {
-    execSyncMock.mockReset();
-  });
-
-  describe('exec', () => {
-    it('should join args into a "docker <args>" command string', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['build', '--quiet']);
-
-      expect(execSyncMock.mock.calls[0][0]).toBe('docker build --quiet');
-    });
-
-    it('should use the context cwd, input, and timeout', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['login', '--password-stdin'], {
-        input: 'secret',
-        timeout: 1234,
-      });
-
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
-        expect.objectContaining({
-          cwd: '/work',
-          input: 'secret',
-          timeout: 1234,
-        }),
-      );
-    });
-
-    it('should default the timeout when none is provided', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['version']);
-
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ timeout: 600_000 }),
-      );
-    });
-
-    it('should use inherit stdio when requested', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['push', 'repo:tag'], { stdio: 'inherit' });
-
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ stdio: 'inherit' }),
-      );
-    });
-
-    it('should use piped stdio by default', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['build']);
-
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
-      );
-    });
-
-    it('should return the execSync stdout', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-
-      expect(strategy.exec(['build'])).toBe('build output\n');
-    });
-
-    it('should return an empty string when execSync returns non-string output', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execSyncMock.mockReturnValue(Buffer.from('binary'));
-
-      expect(strategy.exec(['build'])).toBe('');
-    });
-
-    it('should log the executed command', () => {
-      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
-
-      strategy.exec(['version']);
-
-      expect(context.logger.log).toHaveBeenCalledWith(
-        'Executing: docker version',
-      );
-    });
+    execMock.mockReset();
+    execMock.mockReturnValue('');
   });
 
   describe('verifyDocker', () => {
-    it('should resolve when docker is available', () => {
+    it('should resolve when docker is available', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
-      expect(() => strategy.verifyDocker()).not.toThrow();
+      await expect(strategy.verifyDocker()).resolves.not.toThrow();
     });
 
-    it('should throw ENOENT when docker is unavailable', () => {
+    it('should throw ENOENT when docker is unavailable', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execSyncMock.mockImplementation(() => {
-        throw new Error('spawn docker ENOENT');
+      execMock.mockImplementation(() => {
+        throw Object.assign(new Error('spawnSync docker ENOENT'), {
+          code: 'ENOENT',
+        });
       });
 
-      expect(() => strategy.verifyDocker()).toThrow(
-        expect.objectContaining({ code: 'ENOENT' }),
+      await expect(strategy.verifyDocker()).rejects.toThrow(
+        'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
+      );
+    });
+
+    it('should rethrow any other failure with its detail', async () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execMock.mockImplementation(() => {
+        throw Object.assign(new Error('Command failed'), {
+          status: 1,
+          stderr: 'Cannot connect to the Docker daemon',
+        });
+      });
+
+      await expect(strategy.verifyDocker()).rejects.toThrow(
+        'Command failed: docker version\nCannot connect to the Docker daemon',
       );
     });
   });
 
   describe('login', () => {
-    it('should be a no-op when login is disabled', () => {
+    it('should be a no-op when login is disabled', async () => {
       const { strategy } = makeStrategy(
         { dockerLogin: false },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
-      expect(execSyncMock).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
     });
 
-    it('should be a no-op when no credentials are present', () => {
+    it('should be a no-op when no credentials are present', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
-      strategy.login();
+      await strategy.login();
 
-      expect(execSyncMock).not.toHaveBeenCalled();
+      expect(execMock).not.toHaveBeenCalled();
     });
 
-    it('should throw EAUTH when only a username is provided', () => {
+    it('should throw EAUTH when only GITHUB_TOKEN is present', async () => {
+      const { strategy } = makeStrategy(
+        { dockerImage: 'x' },
+        { GITHUB_TOKEN: 'gh-token' },
+      );
+
+      await expect(strategy.login()).rejects.toThrow(
+        expect.objectContaining({ code: 'EAUTH' }),
+      );
+      expect(execMock).not.toHaveBeenCalled();
+    });
+
+    it('should throw EAUTH when only a username is provided', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user' },
       );
 
-      expect(() => strategy.login()).toThrow(
+      await expect(strategy.login()).rejects.toThrow(
         expect.objectContaining({ code: 'EAUTH' }),
       );
     });
 
-    it('should run docker login with the password on stdin', () => {
+    it('should run docker login with the password on stdin', async () => {
       const { strategy, context } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
-      expect(execSyncMock.mock.calls[0][0]).toBe(
-        'docker login -u user --password-stdin',
-      );
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execMock.mock.calls[0][0]).toEqual([
+        'login',
+        '-u',
+        'user',
+        '--password-stdin',
+      ]);
+      expect(execMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ input: 'pass' }),
       );
       expect(context.logger.log).toHaveBeenCalledWith(
@@ -199,28 +128,32 @@ describe('ImageStrategy', () => {
       );
     });
 
-    it('should include the registry host when configured', () => {
+    it('should include the registry host when configured', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x', dockerRegistry: 'ghcr.io' },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
-      expect(execSyncMock.mock.calls[0][0]).toBe(
-        'docker login ghcr.io -u user --password-stdin',
-      );
+      expect(execMock.mock.calls[0][0]).toEqual([
+        'login',
+        'ghcr.io',
+        '-u',
+        'user',
+        '--password-stdin',
+      ]);
     });
 
-    it('should use GITHUB_TOKEN as the password fallback', () => {
+    it('should use GITHUB_TOKEN as the password fallback', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user', GITHUB_TOKEN: 'gh-token' },
       );
 
-      strategy.login();
+      await strategy.login();
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ input: 'gh-token' }),
       );
     });

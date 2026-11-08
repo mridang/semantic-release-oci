@@ -1,47 +1,23 @@
 /**
- * Logger surface used by the plugin, matching the subset of the
- * semantic-release logger the plugin actually calls.
- */
-export interface Logger {
-  log: (...args: unknown[]) => void;
-  error: (...args: unknown[]) => void;
-}
-
-/**
- * Simplified semantic-release context consumed by the plugin lifecycle
- * hooks and build strategies. Only the fields used are typed.
- */
-export interface SemanticReleaseContext {
-  readonly cwd: string;
-  readonly env: Record<string, string | undefined>;
-  readonly logger: Logger;
-  readonly nextRelease?: {
-    readonly version?: string;
-    readonly gitTag?: string;
-    readonly gitHead?: string;
-    readonly channel?: string;
-    readonly type?: string;
-  };
-  readonly lastRelease?: {
-    readonly version?: string;
-    readonly gitTag?: string;
-    readonly gitHead?: string;
-  };
-  readonly options?: {
-    readonly dryRun?: boolean;
-  };
-}
-
-/**
  * State tracked for a built image between the prepare and publish
  * lifecycle hooks.
  */
 export interface BuildState {
+  /** The short form of the digest, or the build id when there is none. */
   readonly sha: string;
+  /** The image digest hex, or an empty string. */
   readonly sha256: string;
+  /** The id the build was tagged with. */
   readonly buildId: string;
+  /** The rendered tags. */
   readonly tags: readonly string[];
+  /**
+   * The release version, used to push the version tag before the floating ones.
+   */
+  readonly version: string;
+  /** The full image repository path. */
   readonly repo: string;
+  /** Whether the build itself pushed the image. */
   readonly isBuildx: boolean;
 }
 
@@ -50,9 +26,25 @@ export interface BuildState {
  * prepare hook from config and the release context.
  */
 export interface BuildParams {
+  /** The full image repository path. */
   readonly repo: string;
+  /** Tag templates with `{{variable}}` placeholders. */
   readonly tagTemplates: readonly string[];
-  readonly vars: Record<string, string | number | undefined>;
+  /** Values for the placeholders. */
+  readonly vars: Readonly<Record<string, string | number | undefined>>;
+  /** Id to tag the build with. */
   readonly buildId: string;
+  /** Build without publishing. */
   readonly isDryRun: boolean;
+}
+
+/**
+ * What a strategy's `build` step reports: the captured image digest hex (or
+ * an empty string when it cannot be determined) and the rendered tags.
+ */
+export interface BuildResult {
+  /** The image digest hex, or an empty string. */
+  readonly sha256: string;
+  /** The rendered tags. */
+  readonly tags: readonly string[];
 }

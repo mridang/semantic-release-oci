@@ -1,14 +1,12 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { execSync } from 'child_process';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
-import type {
-  BuildParams,
-  SemanticReleaseContext,
-} from '../../src/lib/types.js';
+import type { BuildParams } from '../../src/lib/types.js';
+import { stepContext } from '../utils/context.js';
 
 /**
  * Whether a real `docker buildx bake` is reachable on this host. The
@@ -66,18 +64,19 @@ function makeStrategy(
   cwd: string,
   bakeConfig: OciPluginConfig['dockerBake'],
 ): BakeStrategy {
-  const context: SemanticReleaseContext = {
+  const context = stepContext(
     cwd,
-    env: {},
-    logger: { log: () => undefined, error: () => undefined },
-    nextRelease: { version: '1.2.3' },
-    options: { dryRun: false },
-  };
-  const config = new OciConfig(
-    { dockerBake: bakeConfig } as OciPluginConfig,
-    context.env,
+    {},
+    {
+      logger: { log: () => undefined, error: () => undefined },
+    },
   );
-  return new BakeStrategy(config, context);
+  const config = new OciConfig({ dockerBake: bakeConfig }, context.env);
+  const bake = config.getDockerBake();
+  if (!bake) {
+    throw new Error('dockerBake must be configured for the bake strategy');
+  }
+  return new BakeStrategy(config, context, bake);
 }
 
 const describeOrSkip = dockerAvailable ? describe : describe.skip;
@@ -95,14 +94,14 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     }
   });
 
-  it('builds the image, applies every tag, and captures a real digest', () => {
+  it('builds the image, applies every tag, and captures a real digest', async () => {
     projectDir = makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
     });
 
-    const result = strategy.build({
+    const result = await strategy.build({
       repo,
       tagTemplates: ['1.2.3', 'latest'],
       vars: { version: '1.2.3', major: '1' },
@@ -116,14 +115,14 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     expect(imageExists(`${repo}:latest`)).toBe(true);
   }, 180_000);
 
-  it('validates without producing an image in dry-run mode', () => {
+  it('validates without producing an image in dry-run mode', async () => {
     projectDir = makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
     });
 
-    const result = strategy.build({
+    const result = await strategy.build({
       repo,
       tagTemplates: ['1.2.3'],
       vars: { version: '1.2.3', major: '1' },
