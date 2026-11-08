@@ -213,6 +213,36 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should render missing version parts as empty', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      const context = stepContext(
+        tmpDir,
+        {},
+        {
+          nextRelease: {
+            version: '4',
+            gitTag: 'v4',
+            gitHead: 'abc1234',
+            channel: 'next',
+            type: 'major',
+          },
+        },
+      );
+
+      await prepare(
+        {
+          dockerImage: 'my-app',
+          dockerTags: ['{{major}}-{{minor}}-{{patch}}'],
+        },
+        context,
+      );
+
+      expect(execMock.mock.calls[0][0]).toContain('my-app:4--');
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
     it('should resolve paths from the process cwd when the context has none', async () => {
       const context = stepContext('/unused', {}, { cwd: undefined });
 
@@ -283,6 +313,30 @@ describe('semantic-release-oci', () => {
   });
 
   describe('publish', () => {
+    it.each([null, false])(
+      'should tag and push as a plain build when dockerBake is %j',
+      async (dockerBake) => {
+        const tmpDir = makeTempDir();
+        writeDockerfile(tmpDir);
+        const config = JSON.parse(
+          JSON.stringify({
+            dockerImage: 'no-bake',
+            dockerTags: ['1.2.3'],
+            dockerBake,
+          }),
+        );
+        const context = stepContext(tmpDir);
+
+        await prepare(config, context);
+        await publish(config, context);
+
+        const commands = execMock.mock.calls.map(([args]) => args[0]);
+        expect(commands).toEqual(['build', 'tag', 'push', 'images']);
+
+        fs.rmSync(tmpDir, { recursive: true });
+      },
+    );
+
     it('should consume the build state so a second publish is skipped', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);

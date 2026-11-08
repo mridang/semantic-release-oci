@@ -246,6 +246,7 @@ describe('OciConfig', () => {
           GITHUB_TOKEN: 'gh-token',
         },
       );
+      expect(config.getRegistryUser()).toBe('user');
       expect(config.getRegistryPassword()).toBe('gh-token');
     });
 
@@ -263,6 +264,8 @@ describe('OciConfig', () => {
     it('should detect no credentials', () => {
       const config = makeConfig({}, {});
       expect(config.hasCredentials()).toBe(false);
+      expect(config.getRegistryUser()).toBeUndefined();
+      expect(config.getRegistryPassword()).toBeUndefined();
     });
   });
 });

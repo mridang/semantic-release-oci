@@ -19,6 +19,18 @@ describe('selectStrategy', () => {
     expect(strategy).toBeInstanceOf(BakeStrategy);
   });
 
+  it.each([undefined, null, false, 0, ''])(
+    'should return a BuildStrategy when dockerBake is %j',
+    (dockerBake) => {
+      const strategy = selectStrategy(
+        makeConfig(JSON.parse(JSON.stringify({ dockerBake }))),
+        stepContext('/work'),
+      );
+
+      expect(strategy).toBeInstanceOf(BuildStrategy);
+    },
+  );
+
   it('should return a BuildStrategy when dockerBake is not set', () => {
     const strategy = selectStrategy(makeConfig(), stepContext('/work'));
 

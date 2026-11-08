@@ -269,6 +269,18 @@ describe('ImageStrategy', () => {
       expect(execFileSyncMock).not.toHaveBeenCalled();
     });
 
+    it('should throw EAUTH when only GITHUB_TOKEN is present', () => {
+      const { strategy } = makeStrategy(
+        { dockerImage: 'x' },
+        { GITHUB_TOKEN: 'gh-token' },
+      );
+
+      expect(() => strategy.login()).toThrow(
+        expect.objectContaining({ code: 'EAUTH' }),
+      );
+      expect(execFileSyncMock).not.toHaveBeenCalled();
+    });
+
     it('should throw EAUTH when only a username is provided', () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },

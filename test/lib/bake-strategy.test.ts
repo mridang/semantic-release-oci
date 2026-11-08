@@ -84,6 +84,24 @@ describe('parseBakeDigest', () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
+  it.each([
+    ['a target that is not an object', { image: 'text' }],
+    ['a target without a digest', { image: { other: 'x' } }],
+    [
+      'a digest that is not a string',
+      { image: { 'containerimage.digest': 7 } },
+    ],
+  ])('should return empty string for %s', (_name, metadata) => {
+    const tmpDir = makeTempDir();
+    const file = path.join(tmpDir, 'meta.json');
+    fs.writeFileSync(file, JSON.stringify(metadata));
+
+    expect(parseBakeDigest(file, '*')).toBe('');
+    expect(parseBakeDigest(file, 'image')).toBe('');
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
   it('should not treat an inherited property as the preferred target', () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
