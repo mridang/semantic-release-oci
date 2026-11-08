@@ -32,7 +32,10 @@ export function parseBakeDigest(
     }
     const digestOf = (target: unknown): string | undefined =>
       isRecord(target) ? stringAt(target, 'containerimage.digest') : undefined;
-    const preferred = imageTarget !== '*' ? meta[imageTarget] : undefined;
+    const preferred =
+      imageTarget !== '*' && Object.hasOwn(meta, imageTarget)
+        ? meta[imageTarget]
+        : undefined;
     const entry =
       preferred ||
       Object.values(meta).find((target) => digestOf(target) !== undefined);

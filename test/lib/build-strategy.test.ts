@@ -127,6 +127,24 @@ describe('BuildStrategy', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+      'should render the inherited name {{%s}} as an unknown variable',
+      (name) => {
+        const tmpDir = makeTempDir();
+        writeDockerfile(tmpDir);
+        const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
+
+        const { tags } = strategy.build({
+          ...baseParams,
+          tagTemplates: [`{{${name}}}`, `v{{${name}}}1`],
+        });
+
+        expect(tags).toEqual(['v1']);
+
+        fs.rmSync(tmpDir, { recursive: true });
+      },
+    );
+
     it('should use buildx when dockerPlatform is set', () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);

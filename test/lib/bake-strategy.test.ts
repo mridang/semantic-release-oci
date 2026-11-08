@@ -83,6 +83,19 @@ describe('parseBakeDigest', () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
+  it('should not treat an inherited property as the preferred target', () => {
+    const tmpDir = makeTempDir();
+    const file = path.join(tmpDir, 'meta.json');
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ image: { 'containerimage.digest': 'sha256:abc123' } }),
+    );
+
+    expect(parseBakeDigest(file, 'constructor')).toBe('abc123');
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
   it('should return empty string when the metadata file is missing', () => {
     expect(parseBakeDigest('/nonexistent/meta.json', '*')).toBe('');
   });

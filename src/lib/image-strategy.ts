@@ -118,7 +118,8 @@ export abstract class ImageStrategy {
     return template.replace(
       /\{\{(\w+)\}\}/g,
       (_match: string, key: string): string => {
-        const value = vars[key];
+        // Own keys only: `{{constructor}}` must not reach Object.prototype.
+        const value = Object.hasOwn(vars, key) ? vars[key] : undefined;
         return value !== undefined ? String(value) : '';
       },
     );
