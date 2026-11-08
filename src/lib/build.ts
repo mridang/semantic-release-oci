@@ -42,9 +42,23 @@ export interface BuildOptions {
 }
 
 /**
- * The arguments for user-supplied build flags. Names are normalised to
- * `--kebab-case` (a single letter becomes `-x`) unless they already start
- * with a dash, and a `null` value emits the flag alone.
+ * The name of a user-supplied flag: kept as it is when it starts with a dash,
+ * otherwise `--kebab-case` (a single letter becomes `-x`).
+ *
+ * @param key The name from the configuration.
+ * @returns The flag.
+ */
+function flagName(key: string): string {
+  if (key.startsWith('-')) {
+    return key;
+  }
+  const dashes = key.length === 1 ? '-' : '--';
+  return `${dashes}${key.toLowerCase().replace(/_/g, '-')}`;
+}
+
+/**
+ * The arguments for user-supplied build flags. A `null` value emits the flag
+ * alone and a list emits the flag once per value.
  *
  * @param flags Flag names mapped to a value, a list of values, or null.
  * @returns The arguments.
@@ -53,14 +67,27 @@ function flagArgs(
   flags: Readonly<Record<string, string | string[] | null>>,
 ): readonly string[] {
   return Object.entries(flags).flatMap(([key, value]): string[] => {
-    const flag = key.startsWith('-')
-      ? key
-      : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
+    const flag = flagName(key);
     if (value === null) {
       return [flag];
     }
-    return (Array.isArray(value) ? value : [value]).flatMap((v) => [flag, v]);
+    const values = Array.isArray(value) ? value : [value];
+    return values.flatMap((v) => [flag, v]);
   });
+}
+
+/**
+ * The arguments that select platforms and pushing, for a buildx build.
+ *
+ * @param options What to build and how.
+ * @returns The arguments, none for a plain build.
+ */
+function platformArgs(options: BuildOptions): readonly string[] {
+  if (!options.buildx) {
+    return [];
+  }
+  const push = options.push ? ['--push'] : [];
+  return ['--platform', options.platforms.join(','), '--pull', ...push];
 }
 
 /**
@@ -70,14 +97,12 @@ function flagArgs(
  * @returns The arguments after `docker`.
  */
 function buildArgsOf(options: BuildOptions): readonly string[] {
-  const platform = options.buildx
-    ? [
-        '--platform',
-        options.platforms.join(','),
-        '--pull',
-        ...(options.push ? ['--push'] : []),
-      ]
-    : [];
+  const buildArgs = options.buildArgs.flatMap(({ key, value }) => {
+    if (value === undefined) {
+      return ['--build-arg', key];
+    }
+    return ['--build-arg', `${key}=${value}`];
+  });
   return [
     ...(options.buildx ? ['buildx', 'build'] : ['build']),
     ...(options.network ? [`--network=${options.network}`] : []),
@@ -86,12 +111,9 @@ function buildArgsOf(options: BuildOptions): readonly string[] {
     ...(options.quiet ? ['--quiet'] : []),
     ...(options.noCache ? ['--no-cache'] : []),
     ...options.cacheFrom.flatMap((source) => ['--cache-from', source]),
-    ...options.buildArgs.flatMap(({ key, value }) => [
-      '--build-arg',
-      value === undefined ? key : `${key}=${value}`,
-    ]),
+    ...buildArgs,
     ...flagArgs(options.flags),
-    ...platform,
+    ...platformArgs(options),
     '-f',
     options.dockerfile,
     options.context,
