@@ -13,7 +13,7 @@ import { BakeStrategy, parseBakeDigest } from '../../src/lib/bake-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams } from '../../src/lib/types.js';
-import type { VerifyConditionsContext } from 'semantic-release';
+import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 
 function makeTempDir(): string {
@@ -29,7 +29,9 @@ function writeBakeFile(dir: string): string {
 function makeStrategy(
   cwd: string,
   pluginConfig: OciPluginConfig = {},
-  contextOverrides: Readonly<Record<string, unknown>> = {},
+  contextOverrides: Readonly<
+    Partial<Record<keyof PrepareContext, unknown>>
+  > = {},
 ): { strategy: BakeStrategy; context: VerifyConditionsContext } {
   const context = stepContext(cwd, {}, contextOverrides);
   const config = new OciConfig(

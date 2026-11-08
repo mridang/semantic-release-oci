@@ -7,15 +7,16 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { execSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 import { stepContext } from './utils/context.js';
+import { isRecord, stringAt } from '../src/utils/object.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -136,14 +137,14 @@ describe('semantic-release-oci (integration, real Docker)', () => {
       `curl -s http://${registryHost}/v2/integration-test/tags/list`,
       { encoding: 'utf8' },
     );
-    const parsed = JSON.parse(tagsResponse) as {
-      name: string;
-      tags: string[];
-    };
+    const parsed: unknown = JSON.parse(tagsResponse);
+    if (!isRecord(parsed)) {
+      throw new Error('The registry did not answer with an object.');
+    }
 
-    expect(parsed.name).toBe('integration-test');
-    expect(parsed.tags).toContain('2.0.0');
-    expect(parsed.tags).toContain('latest');
+    expect(stringAt(parsed, 'name')).toBe('integration-test');
+    expect(parsed['tags']).toContain('2.0.0');
+    expect(parsed['tags']).toContain('latest');
   }, 180_000);
 
   it('publish with dockerAutoClean removes local images', async () => {

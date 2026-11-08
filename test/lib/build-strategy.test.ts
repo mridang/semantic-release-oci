@@ -13,7 +13,7 @@ import { BuildStrategy } from '../../src/lib/build-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams, BuildState } from '../../src/lib/types.js';
-import type { VerifyConditionsContext } from 'semantic-release';
+import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 
 function makeTempDir(): string {
@@ -27,7 +27,9 @@ function writeDockerfile(dir: string, content = 'FROM alpine'): void {
 function makeStrategy(
   cwd: string,
   pluginConfig: OciPluginConfig = {},
-  contextOverrides: Readonly<Record<string, unknown>> = {},
+  contextOverrides: Readonly<
+    Partial<Record<keyof PrepareContext, unknown>>
+  > = {},
 ): { strategy: BuildStrategy; context: VerifyConditionsContext } {
   const context = stepContext(cwd, {}, contextOverrides);
   const config = new OciConfig(pluginConfig, context.env);

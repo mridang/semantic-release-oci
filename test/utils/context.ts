@@ -14,7 +14,7 @@ import type { PrepareContext } from 'semantic-release';
 export function stepContext(
   cwd: string,
   env: Readonly<Record<string, string>> = {},
-  overrides: Readonly<Record<string, unknown>> = {},
+  overrides: Readonly<Partial<Record<keyof PrepareContext, unknown>>> = {},
 ): PrepareContext {
   const context: unknown = {
     cwd,
