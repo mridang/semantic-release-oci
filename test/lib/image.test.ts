@@ -19,17 +19,17 @@ beforeEach(() => {
 });
 
 describe('Image', () => {
-  it('is known by repository and tag', () => {
+  it('is known by repository and tag', async () => {
     expect(new Image(docker, 'ghcr.io/o/app', '1.2.3').reference).toBe(
       'ghcr.io/o/app:1.2.3',
     );
   });
 
-  it('pushes its reference and returns the pushed image with the output', () => {
+  it('pushes its reference and returns the pushed image with the output', async () => {
     spy.mockReturnValue('The push refers to repository [app]\n');
     const image = new Image(docker, 'app', '1');
 
-    const pushed = image.push();
+    const pushed = await image.push();
 
     expect(spy.mock.calls[0][0]).toEqual(['push', 'app:1']);
     expect(pushed.image).toBe(image);

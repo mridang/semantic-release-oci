@@ -41,13 +41,13 @@ export class BuildStrategy extends ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): BuildResult {
+  async build(params: BuildParams): Promise<BuildResult> {
     const { config, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const { isBuildx } = this;
 
-    const built = Build.run(this.docker, repo, buildId, {
+    const built = await Build.run(this.docker, repo, buildId, {
       buildx: isBuildx,
       network: config.getDockerNetwork(),
       buildTag: isBuildx ? undefined : `${repo}:${buildId}`,
@@ -92,7 +92,7 @@ export class BuildStrategy extends ImageStrategy {
    *
    * @param state The stored build state.
    */
-  finalizePublish(state: BuildState): void {
+  async finalizePublish(state: BuildState): Promise<void> {
     const { config, context } = this;
     const built = new Build(
       this.docker,
@@ -103,7 +103,8 @@ export class BuildStrategy extends ImageStrategy {
 
     if (!state.isBuildx && config.isPublishEnabled()) {
       for (const tag of this.versionTagsFirst(state)) {
-        const { output } = built.tag(tag).push();
+        const image = await built.tag(tag);
+        const { output } = await image.push();
         if (output) {
           context.logger.log(output);
         }
@@ -112,7 +113,7 @@ export class BuildStrategy extends ImageStrategy {
 
     if (config.isAutoCleanEnabled() && !state.isBuildx) {
       try {
-        built.remove();
+        await built.remove();
       } catch {
         context.logger.log('Image cleanup failed. Continuing.');
       }

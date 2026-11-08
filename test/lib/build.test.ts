@@ -35,8 +35,8 @@ beforeEach(() => {
 });
 
 describe('Build.run', () => {
-  it('assembles a plain build in the documented order', () => {
-    Build.run(docker, 'app', 'id1', {
+  it('assembles a plain build in the documented order', async () => {
+    await Build.run(docker, 'app', 'id1', {
       ...BUILD,
       network: 'host',
       buildTag: 'app:id1',
@@ -81,8 +81,8 @@ describe('Build.run', () => {
     ]);
   });
 
-  it('adds the platforms, pull and push for a buildx build', () => {
-    Build.run(docker, 'app', 'id1', {
+  it('adds the platforms, pull and push for a buildx build', async () => {
+    await Build.run(docker, 'app', 'id1', {
       ...BUILD,
       buildx: true,
       platforms: ['linux/amd64', 'linux/arm64'],
@@ -102,8 +102,8 @@ describe('Build.run', () => {
     ]);
   });
 
-  it('does not push a buildx build that must not publish', () => {
-    Build.run(docker, 'app', 'id1', {
+  it('does not push a buildx build that must not publish', async () => {
+    await Build.run(docker, 'app', 'id1', {
       ...BUILD,
       buildx: true,
       platforms: ['linux/amd64'],
@@ -112,8 +112,8 @@ describe('Build.run', () => {
     expect(spy.mock.calls[0][0]).not.toContain('--push');
   });
 
-  it('keeps flags that already start with a dash as they are', () => {
-    Build.run(docker, 'app', 'id1', {
+  it('keeps flags that already start with a dash as they are', async () => {
+    await Build.run(docker, 'app', 'id1', {
       ...BUILD,
       flags: { '--Keep_Case': 'x' },
     });
@@ -121,51 +121,55 @@ describe('Build.run', () => {
     expect(spy.mock.calls[0][0]).toContain('--Keep_Case');
   });
 
-  it('keeps shell metacharacters in one argument and values literal', () => {
+  it('keeps shell metacharacters in one argument and values literal', async () => {
     const arg = 'MSG=hello world; touch /tmp/pwned $(id) `id` * $HOME ~ "q"';
 
-    Build.run(docker, 'app', 'id1', { ...BUILD, flags: { label: arg } });
+    await Build.run(docker, 'app', 'id1', { ...BUILD, flags: { label: arg } });
 
     expect(spy.mock.calls[0][0]).toContain(arg);
   });
 
-  it('takes the digest from the last line that names one', () => {
+  it('takes the digest from the last line that names one', async () => {
     spy.mockReturnValue(
       '#8 exporting\n#8 writing image sha256:abc123def456 done\nnothing\n',
     );
 
-    expect(Build.run(docker, 'app', 'id1', BUILD).digest).toBe('abc123def456');
+    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe(
+      'abc123def456',
+    );
   });
 
-  it('takes the last digest when several lines name one', () => {
+  it('takes the last digest when several lines name one', async () => {
     spy.mockReturnValue(
       '#9 exporting manifest sha256:aaaa1111\n#9 writing image sha256:bbbb2222\n',
     );
 
-    expect(Build.run(docker, 'app', 'id1', BUILD).digest).toBe('bbbb2222');
+    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe(
+      'bbbb2222',
+    );
   });
 
-  it('has an empty digest when the output names none', () => {
+  it('has an empty digest when the output names none', async () => {
     spy.mockReturnValue('Step 1/1 : FROM alpine\n');
 
-    expect(Build.run(docker, 'app', 'id1', BUILD).digest).toBe('');
+    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe('');
   });
 });
 
 describe('Build', () => {
   const build = new Build(docker, 'app', 'id1', 'abc');
 
-  it('tags the build and returns the image under the new tag', () => {
-    const image = build.tag('1.2.3');
+  it('tags the build and returns the image under the new tag', async () => {
+    const image = await build.tag('1.2.3');
 
     expect(spy.mock.calls[0][0]).toEqual(['tag', 'app:id1', 'app:1.2.3']);
     expect(image.reference).toBe('app:1.2.3');
   });
 
-  it('force-removes the local images of the repository', () => {
+  it('force-removes the local images of the repository', async () => {
     spy.mockReturnValueOnce('id1\nid2\n');
 
-    build.remove();
+    await build.remove();
 
     expect(spy.mock.calls.map((c) => c[0])).toEqual([
       ['images', 'app', '-q'],
@@ -173,10 +177,10 @@ describe('Build', () => {
     ]);
   });
 
-  it('removes nothing when there are no local images', () => {
+  it('removes nothing when there are no local images', async () => {
     spy.mockReturnValueOnce('  \n');
 
-    build.remove();
+    await build.remove();
 
     expect(spy).toHaveBeenCalledTimes(1);
   });

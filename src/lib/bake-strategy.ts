@@ -71,7 +71,7 @@ export class BakeStrategy extends ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  build(params: BuildParams): BuildResult {
+  async build(params: BuildParams): Promise<BuildResult> {
     const { config, context, bake, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
@@ -87,7 +87,7 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const baked = new Bake(this.docker, {
+    const baked = await new Bake(this.docker, {
       file: path.resolve(cwd, bake.file),
       metadataFile,
       imageTarget: bake.imageTarget,
@@ -108,5 +108,5 @@ export class BakeStrategy extends ImageStrategy {
    * Bake pushes during the build via each target's `output`, so there is
    * nothing to tag, push, or clean up at publish time.
    */
-  finalizePublish(): void {}
+  async finalizePublish(): Promise<void> {}
 }

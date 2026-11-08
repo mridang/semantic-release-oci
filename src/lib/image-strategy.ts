@@ -102,8 +102,8 @@ export abstract class ImageStrategy {
    * @throws SemanticReleaseError with code `ENOENT` when Docker is
    *         unavailable.
    */
-  verifyDocker(): void {
-    assertDockerAvailable(this.docker);
+  async verifyDocker(): Promise<void> {
+    await assertDockerAvailable(this.docker);
   }
 
   /**
@@ -113,7 +113,7 @@ export abstract class ImageStrategy {
    * @throws SemanticReleaseError with code `EAUTH` when only partial
    *         credentials are supplied.
    */
-  login(): void {
+  async login(): Promise<void> {
     if (!this.config.isLoginEnabled() || !this.config.hasCredentials()) {
       return;
     }
@@ -126,7 +126,7 @@ export abstract class ImageStrategy {
       );
     }
 
-    new Registry(this.docker, this.config.getDockerRegistry()).login(
+    await new Registry(this.docker, this.config.getDockerRegistry()).login(
       user,
       password,
     );
@@ -149,7 +149,7 @@ export abstract class ImageStrategy {
    * @param params Resolved per-build inputs.
    * @returns      The captured digest hex and the rendered tags.
    */
-  abstract build(params: BuildParams): BuildResult;
+  abstract build(params: BuildParams): Promise<BuildResult>;
 
   /**
    * Performs any tag/push/cleanup that must happen during publish. No-op
@@ -157,5 +157,5 @@ export abstract class ImageStrategy {
    *
    * @param state The stored build state.
    */
-  abstract finalizePublish(state: BuildState): void;
+  abstract finalizePublish(state: BuildState): Promise<void>;
 }

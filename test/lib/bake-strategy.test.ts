@@ -56,7 +56,7 @@ describe('BakeStrategy', () => {
   });
 
   describe('verifyTarget', () => {
-    it('should return a label for a valid bake file', () => {
+    it('should return a label for a valid bake file', async () => {
       const tmpDir = makeTempDir();
       const file = writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
@@ -66,7 +66,7 @@ describe('BakeStrategy', () => {
       expect(strategy.verifyTarget()).toBe(`bakeFile="${file}"`);
     });
 
-    it('should throw EINVAL when neither group nor target is set', () => {
+    it('should throw EINVAL when neither group nor target is set', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerBake: {} });
@@ -76,7 +76,7 @@ describe('BakeStrategy', () => {
       );
     });
 
-    it('should throw ENOENT when the bake file does not exist', () => {
+    it('should throw ENOENT when the bake file does not exist', async () => {
       const tmpDir = makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
@@ -89,14 +89,14 @@ describe('BakeStrategy', () => {
   });
 
   describe('build', () => {
-    it('should drive buildx bake with file, metadata-file, and selector', () => {
+    it('should drive buildx bake with file, metadata-file, and selector', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('buildx');
@@ -108,14 +108,17 @@ describe('BakeStrategy', () => {
       expect(args[args.length - 1]).toBe('release');
     });
 
-    it('should emit one --set tags override per tag', () => {
+    it('should emit one --set tags override per tag', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      strategy.build({ ...baseParams, tagTemplates: ['latest', '1.2.3'] });
+      await strategy.build({
+        ...baseParams,
+        tagTemplates: ['latest', '1.2.3'],
+      });
 
       const args = execMock.mock.calls[0][0];
       const tagSets = args.filter((a) => a.startsWith('image.tags='));
@@ -125,35 +128,35 @@ describe('BakeStrategy', () => {
       ]);
     });
 
-    it('should scope tags to the wildcard target by default', () => {
+    it('should scope tags to the wildcard target by default', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
       const tagSet = args.find((a) => a.startsWith('*.tags='));
       expect(tagSet).toContain('my-app:1.2.3');
     });
 
-    it('should use cacheonly output and no tags in dry-run mode', () => {
+    it('should use cacheonly output and no tags in dry-run mode', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      strategy.build({ ...baseParams, isDryRun: true });
+      await strategy.build({ ...baseParams, isDryRun: true });
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.output=type=cacheonly');
       expect(args.some((a) => a.startsWith('image.tags='))).toBe(false);
     });
 
-    it('should forward dockerArgs as bake --set args', () => {
+    it('should forward dockerArgs as bake --set args', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
@@ -161,13 +164,13 @@ describe('BakeStrategy', () => {
         dockerArgs: { VERSION: '{{version}}' },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.args.VERSION=1.2.3');
     });
 
-    it('should skip boolean dockerArgs', () => {
+    it('should skip boolean dockerArgs', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
@@ -175,26 +178,26 @@ describe('BakeStrategy', () => {
         dockerArgs: { FROM_ENV: true },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
       expect(args.some((a) => a.includes('FROM_ENV'))).toBe(false);
     });
 
-    it('should prefer target over group as the selector', () => {
+    it('should prefer target over group as the selector', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', target: 'image' },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
       expect(args[args.length - 1]).toBe('image');
     });
 
-    it('should capture the digest from the metadata file', () => {
+    it('should capture the digest from the metadata file', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       execMock.mockImplementation((args: readonly string[]): string => {
@@ -211,13 +214,13 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      const { sha256, tags } = strategy.build(baseParams);
+      const { sha256, tags } = await strategy.build(baseParams);
 
       expect(sha256).toBe('abc123');
       expect(tags).toEqual(['1.2.3']);
     });
 
-    it('should remove the metadata file after the build', () => {
+    it('should remove the metadata file after the build', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       let metadataPath = '';
@@ -236,13 +239,13 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
 
-      strategy.build(baseParams);
+      await strategy.build(baseParams);
 
       expect(metadataPath).not.toBe('');
       expect(fs.existsSync(metadataPath)).toBe(false);
     });
 
-    it('should remove the metadata file even when the build fails', () => {
+    it('should remove the metadata file even when the build fails', async () => {
       const tmpDir = makeTempDir();
       writeBakeFile(tmpDir);
       let metadataPath = '';
@@ -256,20 +259,20 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release' },
       });
 
-      expect(() => strategy.build(baseParams)).toThrow('build failed');
+      await expect(strategy.build(baseParams)).rejects.toThrow('build failed');
       expect(metadataPath).not.toBe('');
       expect(fs.existsSync(metadataPath)).toBe(false);
     });
   });
 
   describe('finalizePublish', () => {
-    it('should be a no-op', () => {
+    it('should be a no-op', async () => {
       const tmpDir = makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });
 
-      strategy.finalizePublish();
+      await strategy.finalizePublish();
 
       expect(execMock).not.toHaveBeenCalled();
     });

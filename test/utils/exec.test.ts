@@ -1,112 +1,183 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import type { execFileSync } from 'node:child_process';
+type Callback = (error: unknown, stdout: unknown, stderr: unknown) => void;
 
-const execFileSyncMock = jest.fn<typeof execFileSync>();
+const stdin = { on: jest.fn(), end: jest.fn() };
+const execFileMock =
+  jest.fn<
+    (
+      file: string,
+      args: readonly string[],
+      options: Record<string, unknown>,
+      callback: Callback,
+    ) => { stdin: typeof stdin }
+  >();
 
 jest.unstable_mockModule('node:child_process', () => ({
-  execFileSync: execFileSyncMock,
+  execFile: execFileMock,
 }));
 
 const { ExecError, run } = await import('../../src/utils/exec.js');
 
+/**
+ * Make the next command finish by calling its callback.
+ */
+function finishWith(error: unknown, stdout: unknown, stderr: unknown): void {
+  execFileMock.mockImplementation((_file, _args, _options, callback) => {
+    callback(error, stdout, stderr);
+    return { stdin };
+  });
+}
+
+/**
+ * The error a failed command rejects with.
+ */
+async function rejection(promise: Promise<string>): Promise<unknown> {
+  return promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+}
+
 beforeEach(() => {
-  execFileSyncMock.mockReset();
-  execFileSyncMock.mockReturnValue('out');
+  execFileMock.mockReset();
+  stdin.on.mockReset();
+  stdin.end.mockReset();
+  finishWith(null, 'out', '');
 });
 
 describe('run', () => {
-  it('runs the program with the args as an argv array and returns stdout', () => {
-    expect(run('docker', ['build', 'a b; c'])).toBe('out');
-    expect(execFileSyncMock.mock.calls[0][0]).toBe('docker');
-    expect(execFileSyncMock.mock.calls[0][1]).toEqual(['build', 'a b; c']);
-    expect(execFileSyncMock.mock.calls[0][2]).not.toHaveProperty('shell');
+  it('runs the program with the args as an argv array and returns stdout', async () => {
+    expect(await run('docker', ['build', 'a b; c'])).toBe('out');
+    expect(execFileMock.mock.calls[0][0]).toBe('docker');
+    expect(execFileMock.mock.calls[0][1]).toEqual(['build', 'a b; c']);
+    expect(execFileMock.mock.calls[0][2]).not.toHaveProperty('shell');
   });
 
-  it('passes the working directory, environment, input and timeout', () => {
-    run('docker', ['login'], {
+  it('passes the directory, the environment added to this one, and the timeout', async () => {
+    await run('docker', ['login'], {
       cwd: '/work',
       env: { A: 'b' },
-      input: 'secret',
       timeout: 1234,
     });
 
-    expect(execFileSyncMock.mock.calls[0][2]).toEqual(
+    expect(execFileMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({
         cwd: '/work',
-        env: expect.objectContaining({ A: 'b' }),
-        input: 'secret',
+        env: expect.objectContaining({ A: 'b', PATH: process.env['PATH'] }),
         timeout: 1234,
         encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
       }),
     );
   });
 
-  it('allows far more output than the default 1 MiB buffer', () => {
-    run('docker', ['build']);
+  it('allows far more output than the default 1 MiB buffer', async () => {
+    await run('docker', ['build']);
 
-    expect(execFileSyncMock.mock.calls[0][2]).toEqual(
+    expect(execFileMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({ maxBuffer: 64 * 1024 * 1024 }),
     );
   });
 
-  it('returns an empty string when the output is not text', () => {
-    execFileSyncMock.mockReturnValue(Buffer.from('binary'));
+  it('writes the input to stdin and closes it', async () => {
+    await run('docker', ['login'], { input: 'secret' });
 
-    expect(run('docker', ['build'])).toBe('');
+    expect(stdin.end).toHaveBeenCalledWith('secret');
   });
 
-  it('rethrows a failure as an ExecError that keeps code, status and signal', () => {
-    execFileSyncMock.mockImplementation(() => {
-      throw Object.assign(new Error('Command failed: docker pull'), {
-        code: 'EFAIL',
-        status: 3,
-        signal: 'SIGTERM',
-        stderr: 'denied for https://user:pw0rd@host/x',
-      });
-    });
+  it('closes stdin when there is no input, so the command never waits', async () => {
+    await run('docker', ['build']);
 
-    expect(() => run('docker', ['pull'])).toThrow(
+    expect(stdin.end).toHaveBeenCalledWith(undefined);
+  });
+
+  it('ignores a broken pipe when the command exits before reading its input', async () => {
+    await run('docker', ['login'], { input: 'secret' });
+
+    const [event, handler] = stdin.on.mock.calls[0] as [string, () => void];
+    expect(event).toBe('error');
+    expect(handler()).toBeUndefined();
+  });
+
+  it('rejects with an ExecError that keeps code, status and signal', async () => {
+    finishWith(
+      Object.assign(new Error('Command failed: docker pull'), {
+        code: 'EFAIL',
+        signal: 'SIGTERM',
+        status: 3,
+      }),
+      'partial',
+      'denied for https://user:pw0rd@host/x',
+    );
+
+    const error = await rejection(run('docker', ['pull']));
+
+    expect(error).toBeInstanceOf(ExecError);
+    expect(error).toEqual(
       expect.objectContaining({
         name: 'ExecError',
         code: 'EFAIL',
         status: 3,
         signal: 'SIGTERM',
+        stdout: 'partial',
         stderr: 'denied for https://***@host/x',
       }),
     );
   });
 
-  it('redacts credentials in the message of the error', () => {
-    execFileSyncMock.mockImplementation(() => {
-      throw new Error('Command failed: git clone https://user:pw0rd@host/x');
-    });
+  it('takes a numeric code as the exit status', async () => {
+    finishWith(Object.assign(new Error('failed'), { code: 2 }), '', '');
 
-    expect(() => run('git', ['clone'])).toThrow(
-      'Command failed: git clone https://***@host/x',
+    expect(await rejection(run('docker', ['pull']))).toEqual(
+      expect.objectContaining({ status: 2, code: undefined }),
     );
   });
 
-  it('describes a thrown value that is not an error', () => {
-    execFileSyncMock.mockImplementation(() => {
-      throw 'plain';
-    });
-
-    const thrown = (() => {
-      try {
-        return run('docker', ['pull']);
-      } catch (error: unknown) {
-        return error;
-      }
-    })();
-
-    expect(thrown).toBeInstanceOf(ExecError);
-    expect(thrown).toEqual(
-      expect.objectContaining({
-        message: 'plain',
-        code: undefined,
-        stderr: '',
+  it('reports a command killed after the timeout as ETIMEDOUT', async () => {
+    finishWith(
+      Object.assign(new Error('timed out'), {
+        killed: true,
+        signal: 'SIGTERM',
       }),
+      '',
+      '',
+    );
+
+    expect(await rejection(run('docker', ['build'], { timeout: 10 }))).toEqual(
+      expect.objectContaining({ code: 'ETIMEDOUT', signal: 'SIGTERM' }),
+    );
+  });
+
+  it('does not call a killed command timed out when it had no timeout', async () => {
+    finishWith(
+      Object.assign(new Error('killed'), { killed: true, signal: 'SIGKILL' }),
+      '',
+      '',
+    );
+
+    expect(await rejection(run('docker', ['build']))).toEqual(
+      expect.objectContaining({ code: undefined, signal: 'SIGKILL' }),
+    );
+  });
+
+  it('redacts credentials in the message of the error', async () => {
+    finishWith(
+      new Error('Command failed: git clone https://user:pw0rd@host/x'),
+      '',
+      '',
+    );
+
+    expect(await rejection(run('git', ['clone']))).toEqual(
+      expect.objectContaining({
+        message: 'Command failed: git clone https://***@host/x',
+      }),
+    );
+  });
+
+  it('describes output that is not text as empty', async () => {
+    finishWith(new Error('failed'), Buffer.from('x'), undefined);
+
+    expect(await rejection(run('docker', ['pull']))).toEqual(
+      expect.objectContaining({ stdout: '', stderr: '' }),
     );
   });
 });

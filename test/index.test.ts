@@ -40,7 +40,7 @@ describe('semantic-release-oci', () => {
     execMock.mockReset();
     execMock.mockReturnValue('');
     runMock.mockReset();
-    runMock.mockImplementation((_file, args, options) =>
+    runMock.mockImplementation(async (_file, args, options) =>
       execMock(args, options),
     );
   });

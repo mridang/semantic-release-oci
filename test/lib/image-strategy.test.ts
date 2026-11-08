@@ -29,13 +29,13 @@ describe('ImageStrategy', () => {
   });
 
   describe('verifyDocker', () => {
-    it('should resolve when docker is available', () => {
+    it('should resolve when docker is available', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
-      expect(() => strategy.verifyDocker()).not.toThrow();
+      await expect(strategy.verifyDocker()).resolves.not.toThrow();
     });
 
-    it('should throw ENOENT when docker is unavailable', () => {
+    it('should throw ENOENT when docker is unavailable', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
       execMock.mockImplementation(() => {
         throw Object.assign(new Error('spawnSync docker ENOENT'), {
@@ -43,12 +43,12 @@ describe('ImageStrategy', () => {
         });
       });
 
-      expect(() => strategy.verifyDocker()).toThrow(
+      await expect(strategy.verifyDocker()).rejects.toThrow(
         'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
       );
     });
 
-    it('should rethrow any other failure with its detail', () => {
+    it('should rethrow any other failure with its detail', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
       execMock.mockImplementation(() => {
         throw Object.assign(new Error('Command failed'), {
@@ -57,62 +57,62 @@ describe('ImageStrategy', () => {
         });
       });
 
-      expect(() => strategy.verifyDocker()).toThrow(
+      await expect(strategy.verifyDocker()).rejects.toThrow(
         'Command failed: docker version\nCannot connect to the Docker daemon',
       );
     });
   });
 
   describe('login', () => {
-    it('should be a no-op when login is disabled', () => {
+    it('should be a no-op when login is disabled', async () => {
       const { strategy } = makeStrategy(
         { dockerLogin: false },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
       expect(execMock).not.toHaveBeenCalled();
     });
 
-    it('should be a no-op when no credentials are present', () => {
+    it('should be a no-op when no credentials are present', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
-      strategy.login();
+      await strategy.login();
 
       expect(execMock).not.toHaveBeenCalled();
     });
 
-    it('should throw EAUTH when only GITHUB_TOKEN is present', () => {
+    it('should throw EAUTH when only GITHUB_TOKEN is present', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },
         { GITHUB_TOKEN: 'gh-token' },
       );
 
-      expect(() => strategy.login()).toThrow(
+      await expect(strategy.login()).rejects.toThrow(
         expect.objectContaining({ code: 'EAUTH' }),
       );
       expect(execMock).not.toHaveBeenCalled();
     });
 
-    it('should throw EAUTH when only a username is provided', () => {
+    it('should throw EAUTH when only a username is provided', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user' },
       );
 
-      expect(() => strategy.login()).toThrow(
+      await expect(strategy.login()).rejects.toThrow(
         expect.objectContaining({ code: 'EAUTH' }),
       );
     });
 
-    it('should run docker login with the password on stdin', () => {
+    it('should run docker login with the password on stdin', async () => {
       const { strategy, context } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
       expect(execMock.mock.calls[0][0]).toEqual([
         'login',
@@ -128,13 +128,13 @@ describe('ImageStrategy', () => {
       );
     });
 
-    it('should include the registry host when configured', () => {
+    it('should include the registry host when configured', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x', dockerRegistry: 'ghcr.io' },
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      strategy.login();
+      await strategy.login();
 
       expect(execMock.mock.calls[0][0]).toEqual([
         'login',
@@ -145,13 +145,13 @@ describe('ImageStrategy', () => {
       ]);
     });
 
-    it('should use GITHUB_TOKEN as the password fallback', () => {
+    it('should use GITHUB_TOKEN as the password fallback', async () => {
       const { strategy } = makeStrategy(
         { dockerImage: 'x' },
         { DOCKER_REGISTRY_USER: 'user', GITHUB_TOKEN: 'gh-token' },
       );
 
-      strategy.login();
+      await strategy.login();
 
       expect(execMock.mock.calls[0][1]).toEqual(
         expect.objectContaining({ input: 'gh-token' }),

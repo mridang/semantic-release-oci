@@ -94,14 +94,14 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     }
   });
 
-  it('builds the image, applies every tag, and captures a real digest', () => {
+  it('builds the image, applies every tag, and captures a real digest', async () => {
     projectDir = makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
     });
 
-    const result = strategy.build({
+    const result = await strategy.build({
       repo,
       tagTemplates: ['1.2.3', 'latest'],
       vars: { version: '1.2.3', major: '1' },
@@ -115,14 +115,14 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     expect(imageExists(`${repo}:latest`)).toBe(true);
   }, 180_000);
 
-  it('validates without producing an image in dry-run mode', () => {
+  it('validates without producing an image in dry-run mode', async () => {
     projectDir = makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
     });
 
-    const result = strategy.build({
+    const result = await strategy.build({
       repo,
       tagTemplates: ['1.2.3'],
       vars: { version: '1.2.3', major: '1' },

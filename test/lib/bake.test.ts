@@ -9,7 +9,7 @@ import { dockerRun } from '../../src/lib/docker-run.js';
 afterEach(removeTempDirs);
 
 describe('parseBakeDigest', () => {
-  it('should return the named target digest without the sha256 prefix', () => {
+  it('should return the named target digest without the sha256 prefix', async () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
     fs.writeFileSync(
@@ -23,7 +23,7 @@ describe('parseBakeDigest', () => {
     expect(parseBakeDigest(file, 'image')).toBe('abc123');
   });
 
-  it('should fall back to the first target with a digest for wildcard', () => {
+  it('should fall back to the first target with a digest for wildcard', async () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
     fs.writeFileSync(
@@ -53,7 +53,7 @@ describe('parseBakeDigest', () => {
     expect(parseBakeDigest(file, 'image')).toBe('');
   });
 
-  it('should not treat an inherited property as the preferred target', () => {
+  it('should not treat an inherited property as the preferred target', async () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
     fs.writeFileSync(
@@ -64,11 +64,11 @@ describe('parseBakeDigest', () => {
     expect(parseBakeDigest(file, 'constructor')).toBe('abc123');
   });
 
-  it('should return empty string when the metadata file is missing', () => {
+  it('should return empty string when the metadata file is missing', async () => {
     expect(parseBakeDigest('/nonexistent/meta.json', '*')).toBe('');
   });
 
-  it('should return empty string when the metadata is not an object', () => {
+  it('should return empty string when the metadata is not an object', async () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
     fs.writeFileSync(file, '["sha256:abc"]');
@@ -76,7 +76,7 @@ describe('parseBakeDigest', () => {
     expect(parseBakeDigest(file, '*')).toBe('');
   });
 
-  it('should return empty string on malformed metadata', () => {
+  it('should return empty string on malformed metadata', async () => {
     const tmpDir = makeTempDir();
     const file = path.join(tmpDir, 'meta.json');
     fs.writeFileSync(file, 'not json');
@@ -117,8 +117,8 @@ beforeEach(() => {
 });
 
 describe('Bake', () => {
-  it('injects the tags, build args and selector', () => {
-    bakeOf({
+  it('injects the tags, build args and selector', async () => {
+    await bakeOf({
       tags: ['app:1', 'app:latest'],
       buildArgs: [{ key: 'VERSION', value: '1' }],
     }).run();
@@ -140,8 +140,8 @@ describe('Bake', () => {
     ]);
   });
 
-  it('builds without pushing on a dry run and without a selector', () => {
-    bakeOf({ dryRun: true, tags: ['app:1'], selector: undefined }).run();
+  it('builds without pushing on a dry run and without a selector', async () => {
+    await bakeOf({ dryRun: true, tags: ['app:1'], selector: undefined }).run();
 
     expect(spy.mock.calls[0][0]).toEqual([
       'buildx',
@@ -155,7 +155,7 @@ describe('Bake', () => {
     ]);
   });
 
-  it('returns the digest bake recorded and removes the metadata file', () => {
+  it('returns the digest bake recorded and removes the metadata file', async () => {
     const file = path.join(makeTempDir(), 'meta.json');
     spy.mockImplementation(() => {
       fs.writeFileSync(
@@ -165,20 +165,20 @@ describe('Bake', () => {
       return '';
     });
 
-    const baked = bakeOf({ metadataFile: file }).run();
+    const baked = await bakeOf({ metadataFile: file }).run();
 
     expect(baked.digest).toBe('abc123');
     expect(fs.existsSync(file)).toBe(false);
   });
 
-  it('removes the metadata file when the bake fails', () => {
+  it('removes the metadata file when the bake fails', async () => {
     const file = path.join(makeTempDir(), 'meta.json');
     fs.writeFileSync(file, '{}');
     spy.mockImplementation(() => {
       throw new Error('boom');
     });
 
-    expect(() => bakeOf({ metadataFile: file }).run()).toThrow();
+    await expect(bakeOf({ metadataFile: file }).run()).rejects.toThrow();
     expect(fs.existsSync(file)).toBe(false);
   });
 });

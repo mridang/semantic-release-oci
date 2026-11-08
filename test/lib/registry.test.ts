@@ -19,10 +19,10 @@ beforeEach(() => {
 });
 
 describe('Registry', () => {
-  it('logs in to a host with the password on stdin', () => {
+  it('logs in to a host with the password on stdin', async () => {
     const registry = new Registry(docker, 'ghcr.io');
 
-    expect(registry.login('user', 'pass')).toBe(registry);
+    expect(await registry.login('user', 'pass')).toBe(registry);
 
     expect(spy.mock.calls[0][0]).toEqual([
       'login',
@@ -36,8 +36,8 @@ describe('Registry', () => {
     );
   });
 
-  it('logs in to the default registry when there is no host', () => {
-    new Registry(docker, undefined).login('user', 'pass');
+  it('logs in to the default registry when there is no host', async () => {
+    await new Registry(docker, undefined).login('user', 'pass');
 
     expect(spy.mock.calls[0][0]).toEqual([
       'login',

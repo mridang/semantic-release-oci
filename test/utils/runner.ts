@@ -27,7 +27,7 @@ export function dockerSpy(): DockerSpy {
  * @returns A runner that forwards to it.
  */
 export function runnerOf(spy: DockerSpy): Runner {
-  return (_file, args, options) => spy(args, options);
+  return async (_file, args, options) => spy(args, options);
 }
 
 /**

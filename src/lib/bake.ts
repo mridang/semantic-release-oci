@@ -43,7 +43,9 @@ export function parseBakeDigest(
  * A build argument for a bake target.
  */
 interface BakeArg {
+  /** The name of the build argument. */
   readonly key: string;
+  /** Its value. */
   readonly value: string;
 }
 
@@ -61,6 +63,7 @@ export interface BakeOptions {
   readonly tags: readonly string[];
   /** Build without pushing or exporting. */
   readonly dryRun: boolean;
+  /** Build arguments, set on every target. */
   readonly buildArgs: readonly BakeArg[];
   /** Target or group to build. */
   readonly selector: string | undefined;
@@ -97,7 +100,7 @@ export class Bake {
    *
    * @returns The baked images.
    */
-  run(): BakedImages {
+  async run(): Promise<BakedImages> {
     const { options } = this;
     const tagging = options.dryRun
       ? ['--set', '*.output=type=cacheonly']
@@ -106,7 +109,7 @@ export class Bake {
           `${options.imageTarget}.tags=${tag}`,
         ]);
     try {
-      this.docker([
+      await this.docker([
         'buildx',
         'bake',
         '--file',

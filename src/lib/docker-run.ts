@@ -13,7 +13,10 @@ import { maskArgs, scrub, secretsIn } from './secrets.js';
  * that works with docker (a build, an image, a registry) is given one, so
  * logging, secret hiding and error mapping happen in a single place.
  */
-export type DockerRun = (args: readonly string[], input?: string) => string;
+export type DockerRun = (
+  args: readonly string[],
+  input?: string,
+) => Promise<string>;
 
 /**
  * What a {@link dockerRun} needs.
@@ -111,7 +114,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
   const readFile =
     options.readFile ?? ((file: string) => readText(options.cwd, file));
   const env = { ...process.env, ...options.env };
-  return (args, input) => {
+  return async (args, input) => {
     const nul = args.findIndex((arg) => arg.includes('\0'));
     if (nul >= 0) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
@@ -125,7 +128,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     const shown = scrub(['docker', ...maskArgs(args)].join(' '), secrets);
     options.logger.log(`Executing: ${shown}`);
     try {
-      return run('docker', args, {
+      return await run('docker', args, {
         cwd: options.cwd,
         env: options.env,
         input,
@@ -150,9 +153,9 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
  * @throws SemanticReleaseError with code `ENOENT` when Docker is not
  *         installed; any other failure is rethrown with its detail.
  */
-export function assertDockerAvailable(docker: DockerRun): void {
+export async function assertDockerAvailable(docker: DockerRun): Promise<void> {
   try {
-    docker(['version']);
+    await docker(['version']);
   } catch (error: unknown) {
     if (!(error instanceof DockerCommandError) || error.errno !== 'ENOENT') {
       throw error;

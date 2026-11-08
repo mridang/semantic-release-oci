@@ -89,7 +89,7 @@ export async function verifyConditions(
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
 
-  strategy.verifyDocker();
+  await strategy.verifyDocker();
 
   const { imageName } = resolveImage(config, strategy.cwd);
 
@@ -102,7 +102,7 @@ export async function verifyConditions(
 
   const verifiedTarget = strategy.verifyTarget();
 
-  strategy.login();
+  await strategy.login();
 
   context.logger.log(`Verified: image="${imageName}", ${verifiedTarget}`);
 }
@@ -144,7 +144,7 @@ export async function prepare(
 
   const buildId = crypto.randomBytes(10).toString('hex');
 
-  const { sha256, tags } = strategy.build({
+  const { sha256, tags } = await strategy.build({
     repo,
     tagTemplates: config.getDockerTags(),
     vars,
@@ -202,7 +202,7 @@ export async function publish(
     );
   }
 
-  strategy.finalizePublish(state);
+  await strategy.finalizePublish(state);
   buildStates.delete(key);
   published.add(key);
 

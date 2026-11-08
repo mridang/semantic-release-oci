@@ -43,8 +43,8 @@ export class Image {
    *
    * @returns The pushed image, with what the push wrote.
    */
-  push(): PushedImage {
-    const output = this.docker(['push', this.reference]);
+  async push(): Promise<PushedImage> {
+    const output = await this.docker(['push', this.reference]);
     return new PushedImage(this, output.trim());
   }
 }

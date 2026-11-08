@@ -21,9 +21,12 @@ export class Registry {
    * @param password Registry password or token.
    * @returns The registry, now logged in.
    */
-  login(user: string, password: string): Registry {
+  async login(user: string, password: string): Promise<Registry> {
     const host = this.host ? [this.host] : [];
-    this.docker(['login', ...host, '-u', user, '--password-stdin'], password);
+    await this.docker(
+      ['login', ...host, '-u', user, '--password-stdin'],
+      password,
+    );
     return this;
   }
 }
