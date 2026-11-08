@@ -11,19 +11,35 @@ import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
 import { selectStrategy } from './lib/strategy.js';
 import type { BuildState } from './lib/types.js';
 
-const buildStates = new Map<string, BuildState>();
+/**
+ * Builds in flight between `prepare` and `publish`. A key whose value is
+ * `undefined` marks a `prepare` that started and has not produced a build.
+ */
+const buildStates = new Map<string, BuildState | undefined>();
 
 /**
- * The key a build is stored under between `prepare` and `publish`: the
- * repository plus the directory it was built from, so that two builds of the
- * same repository from different directories cannot replace each other.
+ * The key a build is stored under between `prepare` and `publish`. It names
+ * the plugin entry (a hash of its whole configuration), the release version,
+ * the directory and the repository, so two entries for the same image, two
+ * releases, or two directories can never pick up each other's build.
  *
- * @param cwd  Directory the release runs in.
- * @param repo Full image repository path.
- * @returns    A key unique to that pair.
+ * @param pluginConfig Raw plugin configuration of this entry.
+ * @param context      Semantic-release context of the step.
+ * @param cwd          Directory the release runs in.
+ * @param repo         Full image repository path.
+ * @returns            A key unique to that combination.
  */
-function stateKey(cwd: string, repo: string): string {
-  return JSON.stringify([cwd, repo]);
+function stateKey(
+  pluginConfig: OciPluginConfig,
+  context: PrepareContext,
+  cwd: string,
+  repo: string,
+): string {
+  const entry = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(pluginConfig))
+    .digest('hex');
+  return JSON.stringify([cwd, repo, context.nextRelease.version, entry]);
 }
 
 /**
@@ -99,6 +115,9 @@ export async function prepare(
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
   const { repo } = resolveImage(config, strategy.cwd);
+  const key = stateKey(pluginConfig, context, strategy.cwd, repo);
+  // A build that fails must not leave the previous one to be published.
+  buildStates.set(key, undefined);
   const isDryRun = context.options.dryRun === true;
 
   const { nextRelease } = context;
@@ -127,7 +146,7 @@ export async function prepare(
   });
   const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
-  buildStates.set(stateKey(strategy.cwd, repo), {
+  buildStates.set(key, {
     sha,
     sha256,
     buildId,
@@ -154,12 +173,18 @@ export async function publish(
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
   const { repo } = resolveImage(config, strategy.cwd);
-  const key = stateKey(strategy.cwd, repo);
-  const state = buildStates.get(key);
+  const key = stateKey(pluginConfig, context, strategy.cwd, repo);
 
-  if (!state) {
+  if (!buildStates.has(key)) {
     context.logger.log('No build state found. Skipping publish.');
     return;
+  }
+  const state = buildStates.get(key);
+  if (!state) {
+    throw new SemanticReleaseError(
+      'The image build for this release did not complete, so there is nothing to publish.',
+      'ENOBUILD',
+    );
   }
 
   strategy.finalizePublish(state);

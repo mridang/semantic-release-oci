@@ -357,6 +357,124 @@ describe('semantic-release-oci', () => {
       fs.rmSync(tmpDir, { recursive: true });
     });
 
+    it('should keep two plugin entries for one image in one directory apart', async () => {
+      const dir = makeTempDir();
+      writeDockerfile(dir);
+      fs.writeFileSync(path.join(dir, 'Dockerfile.alpine'), 'FROM alpine');
+      const first = { dockerImage: 'twin', dockerTags: ['A{{version}}'] };
+      const second = {
+        dockerImage: 'twin',
+        dockerFile: 'Dockerfile.alpine',
+        dockerTags: ['B{{version}}'],
+      };
+      const context = stepContext(dir);
+      await prepare(first, context);
+      await prepare(second, context);
+      execMock.mockClear();
+
+      await publish(first, context);
+      await publish(second, context);
+
+      const pushed = execMock.mock.calls
+        .map(([args]) => args)
+        .filter((args) => args[0] === 'push')
+        .map((args) => args[1]);
+      expect(pushed).toEqual(['twin:A1.2.3', 'twin:B1.2.3']);
+
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it('should not publish a build of another release version', async () => {
+      const dir = makeTempDir();
+      writeDockerfile(dir);
+      const config = { dockerImage: 'versions' };
+      await prepare(config, stepContext(dir));
+      execMock.mockClear();
+
+      await publish(
+        config,
+        stepContext(
+          dir,
+          {},
+          {
+            nextRelease: {
+              version: '1.2.4',
+              gitTag: 'v1.2.4',
+              gitHead: 'abc1234',
+              channel: '',
+              type: 'patch',
+            },
+          },
+        ),
+      );
+
+      expect(execMock).not.toHaveBeenCalled();
+
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it('should refuse to publish when the prepare of this release failed', async () => {
+      const dir = makeTempDir();
+      writeDockerfile(dir);
+      const config = { dockerImage: 'stale' };
+      const context = stepContext(dir);
+      await prepare(config, context);
+      execMock.mockImplementation(() => {
+        throw new Error('build failed');
+      });
+      await expect(prepare(config, context)).rejects.toThrow('build failed');
+      execMock.mockReturnValue('');
+      execMock.mockClear();
+
+      await expect(publish(config, context)).rejects.toThrow(
+        expect.objectContaining({ code: 'ENOBUILD' }),
+      );
+
+      expect(execMock).not.toHaveBeenCalled();
+
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it('should publish after a prepare that was retried successfully', async () => {
+      const dir = makeTempDir();
+      writeDockerfile(dir);
+      const config = { dockerImage: 'retried', dockerTags: ['1.2.3'] };
+      const context = stepContext(dir);
+      execMock.mockImplementationOnce(() => {
+        throw new Error('build failed');
+      });
+      await expect(prepare(config, context)).rejects.toThrow('build failed');
+      await prepare(config, context);
+      execMock.mockClear();
+
+      await publish(config, context);
+
+      expect(execMock.mock.calls.map(([args]) => args[0])).toContain('push');
+
+      fs.rmSync(dir, { recursive: true });
+    });
+
+    it('should keep the build when publishing fails so that it can be retried', async () => {
+      const dir = makeTempDir();
+      writeDockerfile(dir);
+      const config = { dockerImage: 'flaky', dockerTags: ['1.2.3'] };
+      const context = stepContext(dir);
+      await prepare(config, context);
+      execMock.mockImplementationOnce(() => {
+        throw new Error('registry unavailable');
+      });
+      await expect(publish(config, context)).rejects.toThrow(
+        'registry unavailable',
+      );
+      execMock.mockClear();
+
+      await publish(config, context);
+
+      expect(execMock.mock.calls.map(([args]) => args[0])).toContain('push');
+
+      fs.rmSync(dir, { recursive: true });
+    });
+
     it('should keep builds of the same repository from different directories apart', async () => {
       const first = makeTempDir();
       const second = makeTempDir();
