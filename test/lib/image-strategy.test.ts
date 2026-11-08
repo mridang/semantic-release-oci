@@ -103,6 +103,16 @@ describe('ImageStrategy', () => {
       );
     });
 
+    it('should allow far more output than the default 1 MiB buffer', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec(['build']);
+
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
+        expect.objectContaining({ maxBuffer: 256 * 1024 * 1024 }),
+      );
+    });
+
     it('should use inherit stdio when requested', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 

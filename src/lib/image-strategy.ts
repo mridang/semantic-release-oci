@@ -16,6 +16,12 @@ interface ExecOptions {
 }
 
 /**
+ * Largest output, in bytes, captured from one docker command. Build logs can
+ * run to many megabytes, and the default of 1 MiB would kill the child.
+ */
+const MAX_BUFFER = 256 * 1024 * 1024;
+
+/**
  * The args as they may be shown in a log or an error: the value of every
  * build argument is replaced, because build arguments commonly carry tokens.
  *
@@ -77,6 +83,7 @@ export abstract class ImageStrategy {
         cwd: this.cwd,
         encoding: 'utf8',
         input: options.input,
+        maxBuffer: MAX_BUFFER,
         stdio:
           options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
         timeout: options.timeout ?? 600_000,
