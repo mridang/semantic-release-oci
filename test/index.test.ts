@@ -6,9 +6,9 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import { ImageStrategy } from '../src/lib/image-strategy.js';
 import { stepContext } from './utils/context.js';

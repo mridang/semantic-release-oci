@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import * as actions from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import type {

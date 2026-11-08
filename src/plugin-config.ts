@@ -269,7 +269,7 @@ export class OciConfig {
    * @returns `true` when bake settings are present.
    */
   isBakeEnabled(): boolean {
-    return this.config.dockerBake !== undefined;
+    return this.getDockerBake() !== undefined;
   }
 
   /**

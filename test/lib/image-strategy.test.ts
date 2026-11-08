@@ -6,14 +6,14 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 
 const execSyncMock = jest.fn<typeof execSync>();
 
-jest.unstable_mockModule('child_process', () => ({
+jest.unstable_mockModule('node:child_process', () => ({
   execSync: execSyncMock,
 }));
 

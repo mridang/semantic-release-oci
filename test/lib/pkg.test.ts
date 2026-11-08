@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { parsePkgName, readPkg, buildImageRepo } from '../../src/lib/pkg.js';
 
 function makeTempDir(): string {

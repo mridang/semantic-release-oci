@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
