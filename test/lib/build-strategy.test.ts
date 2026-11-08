@@ -1,20 +1,15 @@
-import {
-  describe,
-  it,
-  expect,
-  jest,
-  beforeEach,
-  afterEach,
-} from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
-import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams, BuildState } from '../../src/lib/types.js';
 import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
 import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 import { stepContext } from '../utils/context.js';
+import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
+
+const execMock = dockerSpy();
 
 function writeDockerfile(dir: string, content = 'FROM alpine'): void {
   fs.writeFileSync(path.join(dir, 'Dockerfile'), content);
@@ -29,7 +24,10 @@ function makeStrategy(
 ): { strategy: BuildStrategy; context: VerifyConditionsContext } {
   const context = stepContext(cwd, {}, contextOverrides);
   const config = new OciConfig(pluginConfig, context.env);
-  return { strategy: new BuildStrategy(config, context), context };
+  return {
+    strategy: new BuildStrategy(config, context, runnerOf(execMock)),
+    context,
+  };
 }
 
 const baseParams: BuildParams = {
@@ -43,14 +41,9 @@ const baseParams: BuildParams = {
 afterEach(removeTempDirs);
 
 describe('BuildStrategy', () => {
-  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
-
   beforeEach(() => {
-    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
-  });
-
-  afterEach(() => {
-    execMock.mockRestore();
+    execMock.mockReset();
+    execMock.mockReturnValue('');
   });
 
   describe('verifyTarget', () => {
@@ -132,6 +125,19 @@ describe('BuildStrategy', () => {
         expect(tags).toEqual(['v1']);
       },
     );
+
+    it('should drop repeated tags', () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
+
+      const { tags } = strategy.build({
+        ...baseParams,
+        tagTemplates: ['latest', '{{version}}', '1.2.3', 'latest'],
+      });
+
+      expect(tags).toEqual(['latest', '1.2.3']);
+    });
 
     it('should use buildx when dockerPlatform is set', () => {
       const tmpDir = makeTempDir();
@@ -513,7 +519,7 @@ describe('BuildStrategy', () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
-        throw new Error('build failed');
+        throw failure('build failed');
       });
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -577,7 +583,7 @@ describe('BuildStrategy', () => {
       });
       execMock.mockImplementation((args) => {
         if (args[0] === 'push') {
-          throw new Error('denied');
+          throw failure('denied');
         }
         return '';
       });
@@ -606,6 +612,46 @@ describe('BuildStrategy', () => {
         'my-app:1-latest',
         'my-app:1.2.3',
       ]);
+    });
+
+    it('should push a tag without the version after the version tags, in order', () => {
+      const tmpDir = makeTempDir();
+      const { strategy } = makeStrategy(tmpDir, {
+        dockerImage: 'my-app',
+        dockerAutoClean: false,
+      });
+
+      strategy.finalizePublish(
+        makeState({ tags: ['latest', 'sha-abc1234', 'v1.2.3', '1.2.3-rc'] }),
+      );
+
+      const pushed = execMock.mock.calls
+        .map((c) => c[0])
+        .filter((a) => a[0] === 'push')
+        .map((a) => a[1]);
+      expect(pushed).toEqual([
+        'my-app:v1.2.3',
+        'my-app:1.2.3-rc',
+        'my-app:latest',
+        'my-app:sha-abc1234',
+      ]);
+    });
+
+    it('should log what a push wrote', () => {
+      const tmpDir = makeTempDir();
+      const { strategy, context } = makeStrategy(tmpDir, {
+        dockerImage: 'my-app',
+        dockerAutoClean: false,
+      });
+      execMock.mockImplementation((args) =>
+        args[0] === 'push' ? 'The push refers to repository [my-app]\n' : '',
+      );
+
+      strategy.finalizePublish(makeState({ tags: ['1.2.3'] }));
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        'The push refers to repository [my-app]',
+      );
     });
 
     it('should be a no-op for buildx builds', () => {

@@ -1,20 +1,15 @@
-import {
-  describe,
-  it,
-  expect,
-  jest,
-  beforeEach,
-  afterEach,
-} from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BakeStrategy, parseBakeDigest } from '../../src/lib/bake-strategy.js';
-import { ImageStrategy } from '../../src/lib/image-strategy.js';
+import { BakeStrategy } from '../../src/lib/bake-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams } from '../../src/lib/types.js';
 import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
 import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 import { stepContext } from '../utils/context.js';
+import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
+
+const execMock = dockerSpy();
 
 function writeBakeFile(dir: string): string {
   const file = path.join(dir, 'docker-bake.hcl');
@@ -38,7 +33,10 @@ function makeStrategy(
   if (!bake) {
     throw new Error('dockerBake must be configured for the bake strategy');
   }
-  return { strategy: new BakeStrategy(config, context, bake), context };
+  return {
+    strategy: new BakeStrategy(config, context, bake, runnerOf(execMock)),
+    context,
+  };
 }
 
 const baseParams: BuildParams = {
@@ -51,92 +49,10 @@ const baseParams: BuildParams = {
 
 afterEach(removeTempDirs);
 
-describe('parseBakeDigest', () => {
-  it('should return the named target digest without the sha256 prefix', () => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(
-      file,
-      JSON.stringify({
-        image: { 'containerimage.digest': 'sha256:abc123' },
-        binaries: {},
-      }),
-    );
-
-    expect(parseBakeDigest(file, 'image')).toBe('abc123');
-  });
-
-  it('should fall back to the first target with a digest for wildcard', () => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(
-      file,
-      JSON.stringify({
-        binaries: {},
-        image: { 'containerimage.digest': 'sha256:def456' },
-      }),
-    );
-
-    expect(parseBakeDigest(file, '*')).toBe('def456');
-  });
-
-  it.each([
-    ['a target that is not an object', { image: 'text' }],
-    ['a target without a digest', { image: { other: 'x' } }],
-    [
-      'a digest that is not a string',
-      { image: { 'containerimage.digest': 7 } },
-    ],
-  ])('should return empty string for %s', (_name, metadata) => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(file, JSON.stringify(metadata));
-
-    expect(parseBakeDigest(file, '*')).toBe('');
-    expect(parseBakeDigest(file, 'image')).toBe('');
-  });
-
-  it('should not treat an inherited property as the preferred target', () => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(
-      file,
-      JSON.stringify({ image: { 'containerimage.digest': 'sha256:abc123' } }),
-    );
-
-    expect(parseBakeDigest(file, 'constructor')).toBe('abc123');
-  });
-
-  it('should return empty string when the metadata file is missing', () => {
-    expect(parseBakeDigest('/nonexistent/meta.json', '*')).toBe('');
-  });
-
-  it('should return empty string when the metadata is not an object', () => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(file, '["sha256:abc"]');
-
-    expect(parseBakeDigest(file, '*')).toBe('');
-  });
-
-  it('should return empty string on malformed metadata', () => {
-    const tmpDir = makeTempDir();
-    const file = path.join(tmpDir, 'meta.json');
-    fs.writeFileSync(file, 'not json');
-
-    expect(parseBakeDigest(file, '*')).toBe('');
-  });
-});
-
 describe('BakeStrategy', () => {
-  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
-
   beforeEach(() => {
-    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
-  });
-
-  afterEach(() => {
-    execMock.mockRestore();
+    execMock.mockReset();
+    execMock.mockReturnValue('');
   });
 
   describe('verifyTarget', () => {
@@ -334,7 +250,7 @@ describe('BakeStrategy', () => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
         fs.writeFileSync(metadataPath, '{}');
-        throw new Error('build failed');
+        throw failure('build failed');
       });
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },

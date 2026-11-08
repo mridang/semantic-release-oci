@@ -18,6 +18,12 @@ import type { BuildState } from './lib/types.js';
 const buildStates = new Map<string, BuildState | undefined>();
 
 /**
+ * Keys of builds that `publish` has already used, so that a second publish of
+ * the same release can be told from a publish that has no build at all.
+ */
+const published = new Set<string>();
+
+/**
  * The key a build is stored under between `prepare` and `publish`. It names
  * the plugin entry (a hash of its whole configuration), the release version,
  * the directory and the repository, so two entries for the same image, two
@@ -118,6 +124,7 @@ export async function prepare(
   const key = stateKey(pluginConfig, context, strategy.cwd, repo);
   // A build that fails must not leave the previous one to be published.
   buildStates.set(key, undefined);
+  published.delete(key);
   const isDryRun = context.options.dryRun === true;
 
   const { nextRelease } = context;
@@ -176,8 +183,16 @@ export async function publish(
   const key = stateKey(pluginConfig, context, strategy.cwd, repo);
 
   if (!buildStates.has(key)) {
-    context.logger.log('No build state found. Skipping publish.');
-    return;
+    if (published.has(key)) {
+      context.logger.log(
+        'This release was already published. Skipping publish.',
+      );
+      return;
+    }
+    throw new SemanticReleaseError(
+      'No image was built by prepare for this release and plugin configuration, so there is nothing to publish. The prepare and publish steps must use the same configuration.',
+      'ENOBUILD',
+    );
   }
   const state = buildStates.get(key);
   if (!state) {
@@ -189,6 +204,7 @@ export async function publish(
 
   strategy.finalizePublish(state);
   buildStates.delete(key);
+  published.add(key);
 
   try {
     actions.setOutput('docker_image', state.repo);

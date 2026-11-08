@@ -8,10 +8,22 @@ import {
 } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import { verifyConditions, prepare, publish } from '../src/index.js';
-import { ImageStrategy } from '../src/lib/image-strategy.js';
+import { dockerSpy, failure } from './utils/runner.js';
 import { makeTempDir, removeTempDirs } from './utils/tmpdir.js';
 import { stepContext } from './utils/context.js';
+import type { Runner } from '../src/utils/exec.js';
+
+const execMock = dockerSpy();
+const runMock = jest.fn<Runner>();
+
+const actualExec = await import('../src/utils/exec.js');
+
+jest.unstable_mockModule('../src/utils/exec.js', () => ({
+  ...actualExec,
+  run: runMock,
+}));
+
+const { verifyConditions, prepare, publish } = await import('../src/index.js');
 
 function writePackageJson(dir: string, name: string): void {
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name }));
@@ -24,14 +36,13 @@ function writeDockerfile(dir: string, content = 'FROM alpine'): void {
 afterEach(removeTempDirs);
 
 describe('semantic-release-oci', () => {
-  let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
-
   beforeEach(() => {
-    execMock = jest.spyOn(ImageStrategy.prototype, 'exec').mockReturnValue('');
-  });
-
-  afterEach(() => {
-    execMock.mockRestore();
+    execMock.mockReset();
+    execMock.mockReturnValue('');
+    runMock.mockReset();
+    runMock.mockImplementation((_file, args, options) =>
+      execMock(args, options),
+    );
   });
 
   describe('verifyConditions', () => {
@@ -271,7 +282,7 @@ describe('semantic-release-oci', () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
-        throw new Error('build failed');
+        throw failure('build failed');
       });
 
       await expect(
@@ -315,7 +326,7 @@ describe('semantic-release-oci', () => {
 
       expect(execMock).not.toHaveBeenCalled();
       expect(context.logger.log).toHaveBeenLastCalledWith(
-        'No build state found. Skipping publish.',
+        'This release was already published. Skipping publish.',
       );
     });
 
@@ -351,22 +362,24 @@ describe('semantic-release-oci', () => {
       await prepare(config, stepContext(dir));
       execMock.mockClear();
 
-      await publish(
-        config,
-        stepContext(
-          dir,
-          {},
-          {
-            nextRelease: {
-              version: '1.2.4',
-              gitTag: 'v1.2.4',
-              gitHead: 'abc1234',
-              channel: '',
-              type: 'patch',
+      await expect(
+        publish(
+          config,
+          stepContext(
+            dir,
+            {},
+            {
+              nextRelease: {
+                version: '1.2.4',
+                gitTag: 'v1.2.4',
+                gitHead: 'abc1234',
+                channel: '',
+                type: 'patch',
+              },
             },
-          },
+          ),
         ),
-      );
+      ).rejects.toThrow(expect.objectContaining({ code: 'ENOBUILD' }));
 
       expect(execMock).not.toHaveBeenCalled();
     });
@@ -378,7 +391,7 @@ describe('semantic-release-oci', () => {
       const context = stepContext(dir);
       await prepare(config, context);
       execMock.mockImplementation(() => {
-        throw new Error('build failed');
+        throw failure('build failed');
       });
       await expect(prepare(config, context)).rejects.toThrow('build failed');
       execMock.mockReturnValue('');
@@ -397,7 +410,7 @@ describe('semantic-release-oci', () => {
       const config = { dockerImage: 'retried', dockerTags: ['1.2.3'] };
       const context = stepContext(dir);
       execMock.mockImplementationOnce(() => {
-        throw new Error('build failed');
+        throw failure('build failed');
       });
       await expect(prepare(config, context)).rejects.toThrow('build failed');
       await prepare(config, context);
@@ -415,7 +428,7 @@ describe('semantic-release-oci', () => {
       const context = stepContext(dir);
       await prepare(config, context);
       execMock.mockImplementationOnce(() => {
-        throw new Error('registry unavailable');
+        throw failure('registry unavailable');
       });
       await expect(publish(config, context)).rejects.toThrow(
         'registry unavailable',
@@ -449,17 +462,30 @@ describe('semantic-release-oci', () => {
       ]);
     });
 
-    it('should skip publish when no build state exists', async () => {
+    it('should fail when no image was built for this release and entry', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
 
-      await publish({ dockerImage: 'no-build-state' }, context);
+      await expect(
+        publish({ dockerImage: 'no-build-state' }, context),
+      ).rejects.toThrow(expect.objectContaining({ code: 'ENOBUILD' }));
 
       expect(execMock).not.toHaveBeenCalled();
-      expect(context.logger.log).toHaveBeenCalledWith(
-        'No build state found. Skipping publish.',
-      );
+    });
+
+    it('should fail when prepare and publish use different configuration', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      const context = stepContext(tmpDir);
+      await prepare({ dockerImage: 'mismatch' }, context);
+      execMock.mockClear();
+
+      await expect(
+        publish({ dockerImage: 'mismatch', dockerTags: ['other'] }, context),
+      ).rejects.toThrow(expect.objectContaining({ code: 'ENOBUILD' }));
+
+      expect(execMock).not.toHaveBeenCalled();
     });
 
     it('should delegate finalization to the strategy for standard builds', async () => {

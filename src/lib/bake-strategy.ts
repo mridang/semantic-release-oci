@@ -4,46 +4,10 @@ import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
 import type { BakeSettings, OciConfig } from '../plugin-config.js';
-import { isRecord, stringAt } from '../utils/object.js';
+import type { Runner } from '../utils/exec.js';
+import { Bake } from './bake.js';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult } from './types.js';
-
-/**
- * Reads the digest of the built image from a `docker buildx bake`
- * metadata file. Looks up the configured image target, falling back to
- * the first target that recorded a `containerimage.digest`. The
- * `sha256:` prefix is stripped to match the digest shape used elsewhere.
- *
- * @param metadataPath Path to the bake metadata JSON file.
- * @param imageTarget  Target whose digest is preferred, or `"*"`.
- * @returns The image digest hex, or an empty string when unavailable.
- */
-export function parseBakeDigest(
-  metadataPath: string,
-  imageTarget: string,
-): string {
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
-    return '';
-  }
-  try {
-    const meta: unknown = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-    if (!isRecord(meta)) {
-      return '';
-    }
-    const digestOf = (target: unknown): string | undefined =>
-      isRecord(target) ? stringAt(target, 'containerimage.digest') : undefined;
-    const preferred =
-      imageTarget !== '*' && Object.hasOwn(meta, imageTarget)
-        ? meta[imageTarget]
-        : undefined;
-    const entry =
-      preferred ||
-      Object.values(meta).find((target) => digestOf(target) !== undefined);
-    return digestOf(entry)?.replace(/^sha256:/, '') ?? '';
-  } catch {
-    return '';
-  }
-}
 
 /**
  * Build strategy that drives `docker buildx bake`. A single bake group
@@ -64,13 +28,15 @@ export class BakeStrategy extends ImageStrategy {
    * @param config  Resolved plugin configuration.
    * @param context Semantic-release context with cwd, env, and logger.
    * @param bake    The resolved `dockerBake` settings.
+   * @param run     Runs the docker binary; only tests pass one.
    */
   constructor(
     config: OciConfig,
     context: VerifyConditionsContext,
     private readonly bake: BakeSettings,
+    run?: Runner,
   ) {
-    super(config, context);
+    super(config, context, run);
   }
 
   /**
@@ -112,7 +78,6 @@ export class BakeStrategy extends ImageStrategy {
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
 
     const dockerArgs = Object.entries(config.getDockerArgs());
-    const selector = bake.target ?? bake.group;
 
     dockerArgs
       .filter(([, value]) => value === true)
@@ -122,38 +87,21 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const tagOverride = tags.flatMap((tag) => [
-      '--set',
-      `${bake.imageTarget}.tags=${repo}:${tag}`,
-    ]);
-
-    const args: readonly string[] = [
-      'buildx',
-      'bake',
-      '--file',
-      path.resolve(cwd, bake.file),
-      '--metadata-file',
+    const baked = new Bake(this.docker, {
+      file: path.resolve(cwd, bake.file),
       metadataFile,
-      ...(isDryRun ? ['--set', '*.output=type=cacheonly'] : tagOverride),
-      ...dockerArgs
-        .filter(([, value]) => value !== true)
-        .flatMap(([key, value]) => [
-          '--set',
-          `*.args.${key}=${this.renderTemplate(String(value), vars)}`,
-        ]),
-      ...(selector ? [selector] : []),
-    ];
+      imageTarget: bake.imageTarget,
+      tags: tags.map((tag) => `${repo}:${tag}`),
+      dryRun: isDryRun,
+      buildArgs: dockerArgs.flatMap(([key, value]) =>
+        value === true
+          ? []
+          : [{ key, value: this.renderTemplate(String(value), vars) }],
+      ),
+      selector: bake.target ?? bake.group,
+    }).run();
 
-    try {
-      this.exec(args, {
-        stdio: 'pipe',
-        timeout: config.getDockerTimeout(),
-      });
-      const sha256 = parseBakeDigest(metadataFile, bake.imageTarget);
-      return { sha256, tags };
-    } finally {
-      fs.rmSync(metadataFile, { force: true });
-    }
+    return { sha256: baked.digest, tags };
   }
 
   /**

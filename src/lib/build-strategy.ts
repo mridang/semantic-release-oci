@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
+import { Build } from './build.js';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
-
-const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
 
 /**
  * Build strategy that drives `docker build`, or `docker buildx build`
@@ -47,66 +46,28 @@ export class BuildStrategy extends ImageStrategy {
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const { isBuildx } = this;
-    const network = config.getDockerNetwork();
 
-    const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(
-      ([key, value]): string[] => {
-        const flag = key.startsWith('-')
-          ? key
-          : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
-        if (value === null) return [flag];
-        return (Array.isArray(value) ? value : [value]).flatMap((v) => [
-          flag,
-          v,
-        ]);
-      },
-    );
-
-    const args: readonly string[] = [
-      ...(isBuildx ? ['buildx', 'build'] : ['build']),
-      ...(network ? [`--network=${network}`] : []),
-      ...(isBuildx ? [] : ['--tag', `${repo}:${buildId}`]),
-      ...(isDryRun ? [] : tags.flatMap((tag) => ['--tag', `${repo}:${tag}`])),
-      ...(config.isBuildQuiet() ? ['--quiet'] : []),
-      ...(config.isNoCacheEnabled() ? ['--no-cache'] : []),
-      ...config
-        .getDockerBuildCacheFrom()
-        .flatMap((source) => ['--cache-from', source]),
-      ...Object.entries(config.getDockerArgs()).flatMap(([key, value]) =>
-        value === true
-          ? ['--build-arg', key]
-          : [
-              '--build-arg',
-              `${key}=${this.renderTemplate(String(value), vars)}`,
-            ],
-      ),
-      ...extraFlags,
-      ...(isBuildx
-        ? [
-            '--platform',
-            config.getDockerPlatform().join(','),
-            '--pull',
-            ...(config.isPublishEnabled() && !isDryRun ? ['--push'] : []),
-          ]
-        : []),
-      '-f',
-      path.resolve(cwd, config.getDockerFile()),
-      path.resolve(cwd, config.getDockerContext()),
-    ];
-
-    const stdout = this.exec(args, {
-      stdio: 'pipe',
-      timeout: config.getDockerTimeout(),
+    const built = Build.run(this.docker, repo, buildId, {
+      buildx: isBuildx,
+      network: config.getDockerNetwork(),
+      buildTag: isBuildx ? undefined : `${repo}:${buildId}`,
+      tags: isDryRun ? [] : tags.map((tag) => `${repo}:${tag}`),
+      quiet: config.isBuildQuiet(),
+      noCache: config.isNoCacheEnabled(),
+      cacheFrom: config.getDockerBuildCacheFrom(),
+      buildArgs: Object.entries(config.getDockerArgs()).map(([key, value]) => ({
+        key,
+        value:
+          value === true ? undefined : this.renderTemplate(String(value), vars),
+      })),
+      flags: config.getDockerBuildFlags(),
+      platforms: config.getDockerPlatform(),
+      push: config.isPublishEnabled() && !isDryRun,
+      dockerfile: path.resolve(cwd, config.getDockerFile()),
+      context: path.resolve(cwd, config.getDockerContext()),
     });
 
-    const sha256 = stdout
-      .split('\n')
-      .reduce<string>(
-        (found, line) => SHA_REGEX.exec(line)?.groups?.['sha'] ?? found,
-        '',
-      );
-
-    return { sha256, tags };
+    return { sha256: built.digest, tags };
   }
 
   /**
@@ -117,7 +78,7 @@ export class BuildStrategy extends ImageStrategy {
    */
   private versionTagsFirst(state: BuildState): readonly string[] {
     const hasVersion = (tag: string): number =>
-      Number(state.version !== '' && tag.includes(state.version));
+      Number(tag.includes(state.version));
     return state.tags.toSorted((a, b) => hasVersion(b) - hasVersion(a));
   }
 
@@ -133,30 +94,25 @@ export class BuildStrategy extends ImageStrategy {
    */
   finalizePublish(state: BuildState): void {
     const { config, context } = this;
+    const built = new Build(
+      this.docker,
+      state.repo,
+      state.buildId,
+      state.sha256,
+    );
 
     if (!state.isBuildx && config.isPublishEnabled()) {
       for (const tag of this.versionTagsFirst(state)) {
-        this.exec(
-          ['tag', `${state.repo}:${state.buildId}`, `${state.repo}:${tag}`],
-          { timeout: config.getDockerTimeout() },
-        );
-        this.exec(['push', `${state.repo}:${tag}`], {
-          stdio: 'inherit',
-          timeout: config.getDockerTimeout(),
-        });
+        const { output } = built.tag(tag).push();
+        if (output) {
+          context.logger.log(output);
+        }
       }
     }
 
     if (config.isAutoCleanEnabled() && !state.isBuildx) {
       try {
-        const images = this.exec(['images', state.repo, '-q'], {
-          timeout: config.getDockerTimeout(),
-        }).trim();
-        if (images) {
-          this.exec(['rmi', '-f', ...images.split('\n')], {
-            timeout: config.getDockerTimeout(),
-          });
-        }
+        built.remove();
       } catch {
         context.logger.log('Image cleanup failed. Continuing.');
       }

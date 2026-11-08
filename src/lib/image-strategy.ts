@@ -1,69 +1,14 @@
-import { execFileSync } from 'node:child_process';
-import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
-import { codeOf } from '../utils/error.js';
-import { isRecord, numberAt, stringAt } from '../utils/object.js';
-import { maskAssignments, scrub, secretsIn } from './redact.js';
 import { OciConfig } from '../plugin-config.js';
+import type { Runner } from '../utils/exec.js';
+import {
+  assertDockerAvailable,
+  dockerRun,
+  type DockerRun,
+} from './docker-run.js';
+import { Registry } from './registry.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
-
-/**
- * Options accepted by {@link ImageStrategy.exec}.
- */
-interface ExecOptions {
-  readonly input?: string;
-  readonly stdio?: 'inherit' | 'pipe';
-  readonly timeout?: number;
-}
-
-/**
- * Largest output, in bytes, captured from one docker command. Build logs can
- * run to many megabytes, and the default of 1 MiB would kill the child.
- */
-const MAX_BUFFER = 256 * 1024 * 1024;
-
-/**
- * A docker command that did not succeed. It carries the exit status, signal
- * and error code of the failure, but its message is rebuilt from redacted
- * parts only: the error Node throws embeds the full command line.
- */
-class DockerCommandError extends Error {
-  readonly status: number | undefined;
-
-  readonly signal: string | undefined;
-
-  readonly code: string | undefined;
-
-  /**
-   * @param message The redacted message.
-   * @param source  The error that was thrown by the child process call.
-   */
-  constructor(message: string, source: unknown) {
-    super(message);
-    this.name = 'DockerCommandError';
-    this.status = isRecord(source) ? numberAt(source, 'status') : undefined;
-    this.signal = isRecord(source) ? stringAt(source, 'signal') : undefined;
-    this.code = codeOf(source);
-  }
-}
-
-/**
- * What a failed docker call has to say, chosen by the shape of the failure
- * and never by its message text: a command that ran reports its stderr, and
- * one that could not run (no binary, timeout, bad argument) reports its
- * error code.
- *
- * @param error The value thrown by the child process call.
- * @returns The detail, which is not yet scrubbed.
- */
-function detailOf(error: unknown): string | undefined {
-  const code = codeOf(error);
-  if (code !== undefined) {
-    return code;
-  }
-  return isRecord(error) ? stringAt(error, 'stderr') : String(error);
-}
 
 /**
  * A build mechanism (plain/buildx `docker build`, or `docker buildx
@@ -80,6 +25,11 @@ export abstract class ImageStrategy {
   readonly cwd: string;
 
   /**
+   * Runs docker commands for the nouns this strategy works with.
+   */
+  protected readonly docker: DockerRun;
+
+  /**
    * Whether the build step itself pushes the image (buildx and bake), so that
    * nothing is left to tag, push or clean up at publish time.
    */
@@ -88,53 +38,21 @@ export abstract class ImageStrategy {
   /**
    * @param config  Resolved plugin configuration.
    * @param context Semantic-release context with cwd, env, and logger.
+   * @param run     Runs the docker binary; only tests pass one.
    */
   constructor(
     protected readonly config: OciConfig,
     protected readonly context: VerifyConditionsContext,
+    run?: Runner,
   ) {
     this.cwd = context.cwd ?? process.cwd();
-  }
-
-  /**
-   * Executes a Docker CLI command via `child_process.execFileSync` with an argv array (never a shell), using the
-   * context's working directory and logger. Public so tests can spy on
-   * `ImageStrategy.prototype.exec`.
-   *
-   * @param args    Docker arguments, passed as-is after the `docker` binary.
-   * @param options Execution options (input, stdio, timeout).
-   * @returns       The command's stdout, or an empty string.
-   */
-  exec(args: readonly string[], options: ExecOptions = {}): string {
-    const nul = args.findIndex((arg) => arg.includes('\0'));
-    if (nul >= 0) {
-      throw new Error(`Docker argument ${nul} contains a NUL byte.`);
-    }
-    const secrets = secretsIn(args);
-    secrets.forEach((secret) => setSecret(secret));
-    const shown = scrub(
-      ['docker', ...maskAssignments(args)].join(' '),
-      secrets,
-    );
-    this.context.logger.log(`Executing: ${shown}`);
-    try {
-      const result = execFileSync('docker', [...args], {
-        cwd: this.cwd,
-        encoding: 'utf8',
-        input: options.input,
-        maxBuffer: MAX_BUFFER,
-        stdio:
-          options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
-        timeout: options.timeout ?? 600_000,
-      });
-      return typeof result === 'string' ? result : '';
-    } catch (error: unknown) {
-      const detail = scrub(detailOf(error) ?? '', secrets);
-      throw new DockerCommandError(
-        `Command failed: ${shown}${detail ? `\n${detail}` : ''}`,
-        error,
-      );
-    }
+    this.docker = dockerRun({
+      cwd: this.cwd,
+      env: context.env,
+      timeoutMs: config.getDockerTimeout(),
+      logger: context.logger,
+      run,
+    });
   }
 
   /**
@@ -162,7 +80,7 @@ export abstract class ImageStrategy {
 
   /**
    * Renders a list of tag templates, dropping any that resolve to an
-   * empty string.
+   * empty string and any that repeat an earlier tag.
    *
    * @param templates Tag template strings.
    * @param vars      Key-value map of replacement values.
@@ -172,7 +90,10 @@ export abstract class ImageStrategy {
     templates: readonly string[],
     vars: Readonly<Record<string, string | number | undefined>>,
   ): readonly string[] {
-    return templates.map((t) => this.renderTemplate(t, vars)).filter(Boolean);
+    const rendered = templates
+      .map((template) => this.renderTemplate(template, vars))
+      .filter(Boolean);
+    return [...new Set(rendered)];
   }
 
   /**
@@ -182,17 +103,7 @@ export abstract class ImageStrategy {
    *         unavailable.
    */
   verifyDocker(): void {
-    try {
-      this.exec(['version'], { timeout: this.config.getDockerTimeout() });
-    } catch (error: unknown) {
-      if (codeOf(error) !== 'ENOENT') {
-        throw error;
-      }
-      throw new SemanticReleaseError(
-        'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
-        'ENOENT',
-      );
-    }
+    assertDockerAvailable(this.docker);
   }
 
   /**
@@ -215,19 +126,10 @@ export abstract class ImageStrategy {
       );
     }
 
-    const registry = this.config.getDockerRegistry();
-    const loginArgs: readonly string[] = [
-      'login',
-      ...(registry ? [registry] : []),
-      '-u',
+    new Registry(this.docker, this.config.getDockerRegistry()).login(
       user,
-      '--password-stdin',
-    ];
-
-    this.exec(loginArgs, {
-      input: password,
-      timeout: this.config.getDockerTimeout(),
-    });
+      password,
+    );
 
     this.context.logger.log('Docker login successful.');
   }

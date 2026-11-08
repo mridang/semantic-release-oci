@@ -93,9 +93,11 @@ All options are case-sensitive and lowercased in the JSON configuration.
   Tag templates with `{{variable}}` substitution. Available variables:
   `version`, `major`, `minor`, `patch`, `gitTag`, `gitHead`, `channel`,
   `type`, `now`. Default: `['latest', '{{major}}-latest', '{{version}}']`.
-  Tags that contain the release version are pushed first and the other
-  (floating) tags after them, so a failed push cannot leave `latest` pointing
-  at a release whose version tag is missing.
+  Tags are rendered once each (repeated tags are dropped). Tags that contain
+  the release version are pushed first and the other tags after them in the
+  order given, so a failed push cannot leave `latest` pointing at a release
+  whose version tag is missing. A tag that does not contain the version, such
+  as `sha-{{gitHead}}`, is pushed after the version tags.
 
 - **`dockerArgs` (object, optional):**
   Build arguments as key-value pairs. Values support `{{variable}}`
@@ -106,8 +108,15 @@ All options are case-sensitive and lowercased in the JSON configuration.
   `dockerBuildFlags`, `dockerBuildCacheFrom` and the other options) are not
   expanded or interpreted, and a value containing spaces needs no quoting.
   Use `{{variable}}` templates or an absolute path where you relied on
-  `$HOME` or `~`. The values of build arguments are hidden in logged commands
-  and in error output.
+  `$HOME` or `~`. Build-argument values are masked in the logged command, and
+  the values that look like credentials (arguments named like `token`,
+  `secret`, `password`, `key`, `auth`, `cert` or `npmrc`, arguments that
+  docker takes from the environment, and credentials in cache specs) are
+  also removed from error output, including their base64 and URL-encoded
+  forms and each line of a multi-line value. This is best effort: a secret
+  that a build step transforms in another way, such as hashing it, is not
+  recognised. On GitHub Actions the values are also registered with the
+  runner's log masker; elsewhere nothing is printed for that purpose.
 
 - **`dockerBuildFlags` (object, optional):**
   Additional docker build flags. Keys are flag names, values are strings,

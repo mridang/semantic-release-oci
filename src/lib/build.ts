@@ -1,0 +1,171 @@
+import type { DockerRun } from './docker-run.js';
+import { Image } from './image.js';
+
+/**
+ * Matches the line of `docker build` output that names the image digest.
+ */
+const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
+
+/**
+ * A build argument: `value` is undefined for the form that takes the value
+ * from the environment.
+ */
+interface BuildArg {
+  readonly key: string;
+  readonly value: string | undefined;
+}
+
+/**
+ * Everything `docker build` and `docker buildx build` need, decided by the
+ * strategy.
+ */
+export interface BuildOptions {
+  /** Use `docker buildx build`. */
+  readonly buildx: boolean;
+  /** Network to build in, when one is configured. */
+  readonly network: string | undefined;
+  /** Reference of the build's own image, for plain builds. */
+  readonly buildTag: string | undefined;
+  /** References to tag the image with while building. */
+  readonly tags: readonly string[];
+  readonly quiet: boolean;
+  readonly noCache: boolean;
+  readonly cacheFrom: readonly string[];
+  readonly buildArgs: readonly BuildArg[];
+  /** Extra user-supplied flags, by name. */
+  readonly flags: Readonly<Record<string, string | string[] | null>>;
+  readonly platforms: readonly string[];
+  /** Push while building (buildx only). */
+  readonly push: boolean;
+  readonly dockerfile: string;
+  readonly context: string;
+}
+
+/**
+ * The arguments for user-supplied build flags. Names are normalised to
+ * `--kebab-case` (a single letter becomes `-x`) unless they already start
+ * with a dash, and a `null` value emits the flag alone.
+ *
+ * @param flags Flag names mapped to a value, a list of values, or null.
+ * @returns The arguments.
+ */
+function flagArgs(
+  flags: Readonly<Record<string, string | string[] | null>>,
+): readonly string[] {
+  return Object.entries(flags).flatMap(([key, value]): string[] => {
+    const flag = key.startsWith('-')
+      ? key
+      : `${key.length === 1 ? '-' : '--'}${key.toLowerCase().replace(/_/g, '-')}`;
+    if (value === null) {
+      return [flag];
+    }
+    return (Array.isArray(value) ? value : [value]).flatMap((v) => [flag, v]);
+  });
+}
+
+/**
+ * The arguments of a build.
+ *
+ * @param options What to build and how.
+ * @returns The arguments after `docker`.
+ */
+function buildArgsOf(options: BuildOptions): readonly string[] {
+  const platform = options.buildx
+    ? [
+        '--platform',
+        options.platforms.join(','),
+        '--pull',
+        ...(options.push ? ['--push'] : []),
+      ]
+    : [];
+  return [
+    ...(options.buildx ? ['buildx', 'build'] : ['build']),
+    ...(options.network ? [`--network=${options.network}`] : []),
+    ...(options.buildTag ? ['--tag', options.buildTag] : []),
+    ...options.tags.flatMap((tag) => ['--tag', tag]),
+    ...(options.quiet ? ['--quiet'] : []),
+    ...(options.noCache ? ['--no-cache'] : []),
+    ...options.cacheFrom.flatMap((source) => ['--cache-from', source]),
+    ...options.buildArgs.flatMap(({ key, value }) => [
+      '--build-arg',
+      value === undefined ? key : `${key}=${value}`,
+    ]),
+    ...flagArgs(options.flags),
+    ...platform,
+    '-f',
+    options.dockerfile,
+    options.context,
+  ];
+}
+
+/**
+ * An image that has been built: it has an id, a digest and tags can be added
+ * to it. Plain builds leave it as a local image; buildx builds push while
+ * building.
+ */
+export class Build {
+  /**
+   * @param docker     Runs docker commands.
+   * @param repository Image repository path.
+   * @param id         Id the build was tagged with.
+   * @param digest     Digest hex of the image, or an empty string when it
+   *                   cannot be determined.
+   */
+  constructor(
+    private readonly docker: DockerRun,
+    readonly repository: string,
+    readonly id: string,
+    readonly digest: string,
+  ) {}
+
+  /**
+   * Builds an image.
+   *
+   * @param docker     Runs docker commands.
+   * @param repository Image repository path.
+   * @param id         Id the build is tagged with.
+   * @param options    What to build and how.
+   * @returns The built image, with the digest scraped from the output.
+   */
+  static run(
+    docker: DockerRun,
+    repository: string,
+    id: string,
+    options: BuildOptions,
+  ): Build {
+    const output = docker(buildArgsOf(options));
+    const digest = output
+      .split('\n')
+      .reduce<string>(
+        (found, line) => SHA_REGEX.exec(line)?.groups?.['sha'] ?? found,
+        '',
+      );
+    return new Build(docker, repository, id, digest);
+  }
+
+  /**
+   * Adds a tag to the built image.
+   *
+   * @param tag The new tag.
+   * @returns The image under that tag.
+   */
+  tag(tag: string): Image {
+    this.docker([
+      'tag',
+      `${this.repository}:${this.id}`,
+      `${this.repository}:${tag}`,
+    ]);
+    return new Image(this.docker, this.repository, tag);
+  }
+
+  /**
+   * Force-removes the local images of the repository.
+   */
+  remove(): void {
+    const ids = this.docker(['images', this.repository, '-q']).trim();
+    if (ids === '') {
+      return;
+    }
+    this.docker(['rmi', '-f', ...ids.split('\n')]);
+  }
+}
