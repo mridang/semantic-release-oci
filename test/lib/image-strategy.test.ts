@@ -136,6 +136,79 @@ describe('ImageStrategy', () => {
       expect(strategy.exec(['build'])).toBe('');
     });
 
+    it('should mask build-arg values in the logged command', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec([
+        'build',
+        '--build-arg',
+        'TOKEN=s3cr3t',
+        '--build-arg',
+        'FLAG',
+        '--set',
+        '*.args.TOKEN=s3cr3t',
+        '--set',
+        'image.tags=repo:1',
+      ]);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        'Executing: docker build --build-arg TOKEN=*** --build-arg FLAG --set *.args.TOKEN=*** --set image.tags=repo:1',
+      );
+      expect(execFileSyncMock.mock.calls[0][1]).toContain('TOKEN=s3cr3t');
+    });
+
+    it('should not leak build-arg values in the error of a failed command', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw Object.assign(
+          new Error('Command failed: docker build --build-arg TOKEN=s3cr3t'),
+          { stderr: 'no such file' },
+        );
+      });
+
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
+      ).toThrow(
+        'Command failed: docker build --build-arg TOKEN=***\nno such file',
+      );
+    });
+
+    it('should keep the reason when the command could not run at all', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw new Error('spawnSync docker ETIMEDOUT');
+      });
+
+      expect(() => strategy.exec(['build'])).toThrow(
+        'Command failed: docker build\nspawnSync docker ETIMEDOUT',
+      );
+    });
+
+    it.each([
+      ['an error without stderr', new Error('Command failed: docker build')],
+      ['a thrown string', 'Command failed: docker build'],
+    ])('should report only the command for %s', (_name, thrown) => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw thrown;
+      });
+
+      expect(() => strategy.exec(['build'])).toThrow(
+        /^Command failed: docker build$/,
+      );
+    });
+
+    it('should stringify a thrown non-error', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw 'plain';
+      });
+
+      expect(() => strategy.exec(['build'])).toThrow(
+        'Command failed: docker build\nplain',
+      );
+    });
+
     it('should log the executed command', () => {
       const { strategy, context } = makeStrategy({ dockerImage: 'x' });
 

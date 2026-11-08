@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
+import { messageOf } from '../utils/error.js';
+import { isRecord, stringAt } from '../utils/object.js';
 import { OciConfig } from '../plugin-config.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
 
@@ -11,6 +13,26 @@ interface ExecOptions {
   readonly input?: string;
   readonly stdio?: 'inherit' | 'pipe';
   readonly timeout?: number;
+}
+
+/**
+ * The args as they may be shown in a log or an error: the value of every
+ * build argument is replaced, because build arguments commonly carry tokens.
+ *
+ * @param args Docker arguments.
+ * @returns The arguments with build-argument values masked.
+ */
+function redactArgs(args: readonly string[]): readonly string[] {
+  return args.map((arg, index) => {
+    const flag = args[index - 1];
+    if (flag === '--build-arg') {
+      return arg.replace(/=.*$/s, '=***');
+    }
+    if (flag === '--set') {
+      return arg.replace(/^(.*\.args\.[^=]*)=.*$/s, '$1=***');
+    }
+    return arg;
+  });
 }
 
 /**
@@ -48,16 +70,29 @@ export abstract class ImageStrategy {
    * @returns       The command's stdout, or an empty string.
    */
   exec(args: readonly string[], options: ExecOptions = {}): string {
-    const cmd = ['docker', ...args].join(' ');
-    this.context.logger.log(`Executing: ${cmd}`);
-    const result = execFileSync('docker', [...args], {
-      cwd: this.cwd,
-      encoding: 'utf8',
-      input: options.input,
-      stdio: options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
-      timeout: options.timeout ?? 600_000,
-    });
-    return typeof result === 'string' ? result : '';
+    const shown = ['docker', ...redactArgs(args)].join(' ');
+    this.context.logger.log(`Executing: ${shown}`);
+    try {
+      const result = execFileSync('docker', [...args], {
+        cwd: this.cwd,
+        encoding: 'utf8',
+        input: options.input,
+        stdio:
+          options.stdio === 'inherit' ? 'inherit' : ['pipe', 'pipe', 'pipe'],
+        timeout: options.timeout ?? 600_000,
+      });
+      return typeof result === 'string' ? result : '';
+    } catch (error: unknown) {
+      // The error from the child process embeds the full command line, so it
+      // is rebuilt from the redacted one rather than passed on.
+      const reason = messageOf(error);
+      const detail = reason.startsWith('Command failed:')
+        ? isRecord(error)
+          ? stringAt(error, 'stderr')
+          : undefined
+        : reason;
+      throw new Error(`Command failed: ${shown}${detail ? `\n${detail}` : ''}`);
+    }
   }
 
   /**
