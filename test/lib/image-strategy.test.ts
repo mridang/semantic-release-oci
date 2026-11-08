@@ -6,15 +6,15 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 
-const execSyncMock = jest.fn<typeof execSync>();
+const execFileSyncMock = jest.fn<typeof execFileSync>();
 
 jest.unstable_mockModule('node:child_process', () => ({
-  execSync: execSyncMock,
+  execFileSync: execFileSyncMock,
 }));
 
 const { BuildStrategy } = await import('../../src/lib/build-strategy.js');
@@ -33,21 +33,36 @@ function makeStrategy(
 
 describe('ImageStrategy', () => {
   beforeEach(() => {
-    execSyncMock.mockReset();
-    execSyncMock.mockReturnValue('build output\n');
+    execFileSyncMock.mockReset();
+    execFileSyncMock.mockReturnValue('build output\n');
   });
 
   afterEach(() => {
-    execSyncMock.mockReset();
+    execFileSyncMock.mockReset();
   });
 
   describe('exec', () => {
-    it('should join args into a "docker <args>" command string', () => {
+    it('should run docker with the args as an argv array, not a shell string', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
       strategy.exec(['build', '--quiet']);
 
-      expect(execSyncMock.mock.calls[0][0]).toBe('docker build --quiet');
+      expect(execFileSyncMock.mock.calls[0][0]).toBe('docker');
+      expect(execFileSyncMock.mock.calls[0][1]).toEqual(['build', '--quiet']);
+    });
+
+    it('should keep shell metacharacters in one argument', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      const arg = 'MSG=hello world; touch /tmp/pwned $(id) `id` *';
+
+      strategy.exec(['build', '--build-arg', arg]);
+
+      expect(execFileSyncMock.mock.calls[0][1]).toEqual([
+        'build',
+        '--build-arg',
+        arg,
+      ]);
+      expect(execFileSyncMock.mock.calls[0][2]).not.toHaveProperty('shell');
     });
 
     it('should use the context cwd, input, and timeout', () => {
@@ -58,7 +73,7 @@ describe('ImageStrategy', () => {
         timeout: 1234,
       });
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({
           cwd: '/work',
           input: 'secret',
@@ -73,7 +88,7 @@ describe('ImageStrategy', () => {
 
       strategy.exec(['version']);
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ cwd: process.cwd() }),
       );
     });
@@ -83,7 +98,7 @@ describe('ImageStrategy', () => {
 
       strategy.exec(['version']);
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ timeout: 600_000 }),
       );
     });
@@ -93,7 +108,7 @@ describe('ImageStrategy', () => {
 
       strategy.exec(['push', 'repo:tag'], { stdio: 'inherit' });
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ stdio: 'inherit' }),
       );
     });
@@ -103,20 +118,20 @@ describe('ImageStrategy', () => {
 
       strategy.exec(['build']);
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
 
-    it('should return the execSync stdout', () => {
+    it('should return the stdout', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
       expect(strategy.exec(['build'])).toBe('build output\n');
     });
 
-    it('should return an empty string when execSync returns non-string output', () => {
+    it('should return an empty string when docker returns non-string output', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execSyncMock.mockReturnValue(Buffer.from('binary'));
+      execFileSyncMock.mockReturnValue(Buffer.from('binary'));
 
       expect(strategy.exec(['build'])).toBe('');
     });
@@ -141,7 +156,7 @@ describe('ImageStrategy', () => {
 
     it('should throw ENOENT when docker is unavailable', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execSyncMock.mockImplementation(() => {
+      execFileSyncMock.mockImplementation(() => {
         throw new Error('spawn docker ENOENT');
       });
 
@@ -160,7 +175,7 @@ describe('ImageStrategy', () => {
 
       strategy.login();
 
-      expect(execSyncMock).not.toHaveBeenCalled();
+      expect(execFileSyncMock).not.toHaveBeenCalled();
     });
 
     it('should be a no-op when no credentials are present', () => {
@@ -168,7 +183,7 @@ describe('ImageStrategy', () => {
 
       strategy.login();
 
-      expect(execSyncMock).not.toHaveBeenCalled();
+      expect(execFileSyncMock).not.toHaveBeenCalled();
     });
 
     it('should throw EAUTH when only a username is provided', () => {
@@ -190,10 +205,13 @@ describe('ImageStrategy', () => {
 
       strategy.login();
 
-      expect(execSyncMock.mock.calls[0][0]).toBe(
-        'docker login -u user --password-stdin',
-      );
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][1]).toEqual([
+        'login',
+        '-u',
+        'user',
+        '--password-stdin',
+      ]);
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ input: 'pass' }),
       );
       expect(context.logger.log).toHaveBeenCalledWith(
@@ -209,9 +227,13 @@ describe('ImageStrategy', () => {
 
       strategy.login();
 
-      expect(execSyncMock.mock.calls[0][0]).toBe(
-        'docker login ghcr.io -u user --password-stdin',
-      );
+      expect(execFileSyncMock.mock.calls[0][1]).toEqual([
+        'login',
+        'ghcr.io',
+        '-u',
+        'user',
+        '--password-stdin',
+      ]);
     });
 
     it('should use GITHUB_TOKEN as the password fallback', () => {
@@ -222,7 +244,7 @@ describe('ImageStrategy', () => {
 
       strategy.login();
 
-      expect(execSyncMock.mock.calls[0][1]).toEqual(
+      expect(execFileSyncMock.mock.calls[0][2]).toEqual(
         expect.objectContaining({ input: 'gh-token' }),
       );
     });

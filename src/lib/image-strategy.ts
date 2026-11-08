@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
 import { OciConfig } from '../plugin-config.js';
@@ -39,18 +39,18 @@ export abstract class ImageStrategy {
   }
 
   /**
-   * Executes a Docker CLI command via `child_process.execSync`, using the
+   * Executes a Docker CLI command via `child_process.execFileSync` with an argv array (never a shell), using the
    * context's working directory and logger. Public so tests can spy on
    * `ImageStrategy.prototype.exec`.
    *
-   * @param args    Docker arguments, joined onto a leading `docker`.
+   * @param args    Docker arguments, passed as-is after the `docker` binary.
    * @param options Execution options (input, stdio, timeout).
    * @returns       The command's stdout, or an empty string.
    */
   exec(args: readonly string[], options: ExecOptions = {}): string {
     const cmd = ['docker', ...args].join(' ');
     this.context.logger.log(`Executing: ${cmd}`);
-    const result = execSync(cmd, {
+    const result = execFileSync('docker', [...args], {
       cwd: this.cwd,
       encoding: 'utf8',
       input: options.input,
