@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord, stringAt } from '../utils/object.js';
 
+/**
+ * Splits a package name into its optional scope and the rest.
+ */
 const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
 
 /**
@@ -11,8 +14,10 @@ const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
  * @returns       The parsed `scope` and `name`, each `null` when absent.
  */
 export function parsePkgName(pkgname: string): {
-  scope: string | null;
-  name: string | null;
+  /** The scope without its `@`, or null. */
+  readonly scope: string | null;
+  /** The bare name, or null. */
+  readonly name: string | null;
 } {
   const match = NAME_EXP.exec(pkgname);
   if (!match) return { scope: null, name: null };

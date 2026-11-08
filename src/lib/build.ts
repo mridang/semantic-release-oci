@@ -11,7 +11,9 @@ const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
  * from the environment.
  */
 interface BuildArg {
+  /** The name of the build argument. */
   readonly key: string;
+  /** The value, or undefined to take it from the environment. */
   readonly value: string | undefined;
 }
 
@@ -28,16 +30,23 @@ export interface BuildOptions {
   readonly buildTag: string | undefined;
   /** References to tag the image with while building. */
   readonly tags: readonly string[];
+  /** Suppress the build output (`--quiet`). */
   readonly quiet: boolean;
+  /** Ignore the build cache (`--no-cache`). */
   readonly noCache: boolean;
+  /** Cache sources (`--cache-from`). */
   readonly cacheFrom: readonly string[];
+  /** Build arguments (`--build-arg`). */
   readonly buildArgs: readonly BuildArg[];
   /** Extra user-supplied flags, by name. */
   readonly flags: Readonly<Record<string, string | string[] | null>>;
+  /** Platforms of a buildx build. */
   readonly platforms: readonly string[];
   /** Push while building (buildx only). */
   readonly push: boolean;
+  /** Path of the Dockerfile. */
   readonly dockerfile: string;
+  /** Path of the build context. */
   readonly context: string;
 }
 
@@ -149,13 +158,13 @@ export class Build {
    * @param options    What to build and how.
    * @returns The built image, with the digest scraped from the output.
    */
-  static run(
+  static async run(
     docker: DockerRun,
     repository: string,
     id: string,
     options: BuildOptions,
-  ): Build {
-    const output = docker(buildArgsOf(options));
+  ): Promise<Build> {
+    const output = await docker(buildArgsOf(options));
     const digest = output
       .split('\n')
       .reduce<string>(
@@ -171,8 +180,8 @@ export class Build {
    * @param tag The new tag.
    * @returns The image under that tag.
    */
-  tag(tag: string): Image {
-    this.docker([
+  async tag(tag: string): Promise<Image> {
+    await this.docker([
       'tag',
       `${this.repository}:${this.id}`,
       `${this.repository}:${tag}`,
@@ -183,11 +192,12 @@ export class Build {
   /**
    * Force-removes the local images of the repository.
    */
-  remove(): void {
-    const ids = this.docker(['images', this.repository, '-q']).trim();
+  async remove(): Promise<void> {
+    const output = await this.docker(['images', this.repository, '-q']);
+    const ids = output.trim();
     if (ids === '') {
       return;
     }
-    this.docker(['rmi', '-f', ...ids.split('\n')]);
+    await this.docker(['rmi', '-f', ...ids.split('\n')]);
   }
 }
