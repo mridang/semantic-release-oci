@@ -4,117 +4,113 @@ import { isRecord, stringAt } from './object.js';
 import { redactCredentials } from './redact.js';
 
 /**
- * Options of a {@link Runner} call.
- */
-export interface RunOptions {
-  /**
-   * Directory the program runs in.
-   */
-  readonly cwd?: string;
-
-  /**
-   * Environment of the program. Inherited from this process when omitted.
-   */
-  readonly env?: Readonly<Record<string, string | undefined>>;
-
-  /**
-   * Text written to the program's stdin.
-   */
-  readonly input?: string;
-
-  /**
-   * Milliseconds after which the program is killed.
-   */
-  readonly timeout?: number;
-}
-
-/**
- * A function that runs a program synchronously, without a shell: the program
- * and each argument are passed separately, so values are never interpreted as
- * shell syntax. Clients take one as a parameter, so they are unit-testable
- * without mocking Node's built-in modules.
- *
- * It returns what the program wrote to stdout and throws an {@link ExecError}
- * when the program cannot be run or exits unsuccessfully.
- */
-export type Runner = (
-  file: string,
-  args: readonly string[],
-  options?: RunOptions,
-) => string;
-
-/**
- * The largest output, in bytes, a child process may write before it is
- * killed. Node's default of 1 MiB makes chatty build output fail with
- * `ENOBUFS`.
+ * Largest output captured from a command: 64 MiB, so a long listing is not
+ * mistaken for a failure.
  */
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 /**
- * A failed child process. Its message and `stderr` have had credentials in
- * URLs and well-known tokens redacted, and it keeps the machine-readable
- * fields of the original error, so callers can tell a missing program
- * (`ENOENT`) from a failing one (`status`) or a kill (`signal`) without
- * carrying the unredacted original along.
+ * Options for running a command.
+ */
+export interface ExecOptions {
+  /** Working directory of the command. */
+  readonly cwd?: string;
+  /** Variables added to the current environment for the command. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Text written to the command's standard input. */
+  readonly input?: string;
+  /** Milliseconds after which the command is killed. */
+  readonly timeout?: number;
+  /** Largest stdout or stderr captured, in bytes. */
+  readonly maxBuffer?: number;
+}
+
+/**
+ * Runs a program without a shell and returns its standard output.
+ */
+export type Runner = (
+  file: string,
+  args: readonly string[],
+  options?: ExecOptions,
+) => string;
+
+/**
+ * The error raised when a command cannot be started or exits unsuccessfully.
+ * It carries the same shape in every plugin: `code` (a system error such as
+ * `ENOENT`), `status` (the exit code), `signal`, and the captured output.
+ * Credentials are removed from the message and the output.
  */
 export class ExecError extends Error {
-  /**
-   * The error code, such as `ENOENT` or `ETIMEDOUT`.
-   */
   readonly code: string | undefined;
 
-  /**
-   * The exit status of a program that ran and failed.
-   */
   readonly status: number | undefined;
 
-  /**
-   * The signal that killed the program.
-   */
   readonly signal: string | undefined;
 
-  /**
-   * What the program wrote to stderr, redacted.
-   */
-  readonly stderr: string | undefined;
+  readonly stdout: string;
+
+  readonly stderr: string;
 
   /**
-   * @param source The error thrown by `execFileSync`.
+   * @param message Description of the failure, already free of credentials.
+   * @param details The code, exit status, signal and captured output.
    */
-  constructor(source: unknown) {
-    super(redactCredentials(messageOf(source)));
+  constructor(
+    message: string,
+    details: {
+      readonly code: string | undefined;
+      readonly status: number | undefined;
+      readonly signal: string | undefined;
+      readonly stdout: string;
+      readonly stderr: string;
+    },
+  ) {
+    super(message);
     this.name = 'ExecError';
-    this.code = codeOf(source);
-    this.status = statusOf(source);
-    this.signal = signalOf(source);
-    const stderr = isRecord(source) ? stringAt(source, 'stderr') : undefined;
-    this.stderr = stderr === undefined ? undefined : redactCredentials(stderr);
+    this.code = details.code;
+    this.status = details.status;
+    this.signal = details.signal;
+    this.stdout = details.stdout;
+    this.stderr = details.stderr;
   }
 }
 
 /**
- * The default {@link Runner}, built on Node's `execFileSync`. A failure is
- * rethrown as an {@link ExecError}.
+ * Run a program without a shell. Arguments are passed as an array, so nothing
+ * in them is interpreted; the environment is the current one plus
+ * `options.env`.
  *
- * @param file The program to run.
+ * @param file Program to run.
  * @param args Its arguments.
- * @param options Directory, environment, stdin and timeout.
- * @returns What the program wrote to stdout.
- * @throws ExecError when the program cannot be run or exits unsuccessfully.
+ * @param options Working directory, extra environment, input, timeout and
+ *   output limit.
+ * @returns The standard output as a string.
+ * @throws ExecError when the program cannot be started or fails; its message
+ *   and output have credentials redacted.
  */
 export const run: Runner = (file, args, options = {}) => {
   try {
     const output = execFileSync(file, [...args], {
       cwd: options.cwd,
-      env: options.env,
+      env: { ...process.env, ...options.env },
       input: options.input,
       timeout: options.timeout,
-      maxBuffer: MAX_BUFFER,
+      maxBuffer: options.maxBuffer ?? MAX_BUFFER,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return typeof output === 'string' ? output : '';
   } catch (error: unknown) {
-    throw new ExecError(error);
+    const text = (key: string): string => {
+      const value = isRecord(error) ? stringAt(error, key) : undefined;
+      return redactCredentials(value ?? '');
+    };
+    throw new ExecError(redactCredentials(messageOf(error)), {
+      code: codeOf(error),
+      status: statusOf(error),
+      signal: signalOf(error),
+      stdout: text('stdout'),
+      stderr: text('stderr'),
+    });
   }
 };

@@ -33,7 +33,7 @@ describe('run', () => {
     expect(execFileSyncMock.mock.calls[0][2]).toEqual(
       expect.objectContaining({
         cwd: '/work',
-        env: { A: 'b' },
+        env: expect.objectContaining({ A: 'b' }),
         input: 'secret',
         timeout: 1234,
         encoding: 'utf8',
@@ -105,7 +105,7 @@ describe('run', () => {
       expect.objectContaining({
         message: 'plain',
         code: undefined,
-        stderr: undefined,
+        stderr: '',
       }),
     );
   });

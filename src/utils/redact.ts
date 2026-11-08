@@ -1,7 +1,3 @@
-import SemanticReleaseError from '@semantic-release/error';
-import { codeOf, messageOf } from './error.js';
-import { isRecord } from './object.js';
-
 /**
  * Hide credentials in a piece of text that is about to be logged or put in an
  * error message. This is a backstop that works on the shape of the text; the
@@ -33,28 +29,38 @@ export function redactCredentials(text: string): string {
 }
 
 /**
- * A copy of a thrown value that is safe to log and rethrow: its message,
- * `stdout` and `stderr` are redacted, and its `code` and `status` are kept.
- * A `SemanticReleaseError` is returned as is, because its text is written
- * by this plugin.
+ * Replace secrets in text that is about to be shown to a person. A secret is
+ * searched for in the forms it takes when a server or a tool echoes a URL
+ * back: as it is, percent-encoded (`encodeURIComponent`), form-encoded
+ * (`URLSearchParams`, where a space becomes `+`) and JSON-escaped with `/`
+ * written as `\/` (as PHP's `json_encode` does). Any other re-encoding is not
+ * recognised, so never put a secret in text that is shown if it can be left
+ * out.
  *
- * @param error Whatever was thrown.
- * @returns An error whose text holds no credentials.
+ * @param text Text that came from the network or from a child process.
+ * @param secrets The secrets to remove. Empty ones are ignored.
+ * @returns The text with every form of every secret replaced.
  */
-export function redactError(error: unknown): Error {
-  if (error instanceof SemanticReleaseError) {
-    return error;
+export function redactSecrets(
+  text: string,
+  secrets: readonly string[],
+): string {
+  const forms = secrets
+    .filter((secret) => secret !== '')
+    .flatMap((secret) => [
+      secret,
+      encodeURIComponent(secret),
+      new URLSearchParams({ s: secret }).toString().slice(2),
+      JSON.stringify(secret).slice(1, -1).replaceAll('/', '\\/'),
+    ])
+    .toSorted((a, b) => b.length - a.length);
+  if (forms.length === 0) {
+    return text;
   }
-  const text = (key: string): Record<string, string> => {
-    const value = isRecord(error) ? error[key] : undefined;
-    return typeof value === 'string' ? { [key]: redactCredentials(value) } : {};
-  };
-  const code = codeOf(error);
-  const status = isRecord(error) ? error.status : undefined;
-  return Object.assign(new Error(redactCredentials(messageOf(error))), {
-    ...(code === undefined ? {} : { code }),
-    ...(typeof status === 'number' ? { status } : {}),
-    ...text('stdout'),
-    ...text('stderr'),
-  });
+  // One pass, so that a secret cannot match inside the marker of another.
+  const pattern = new RegExp(
+    forms.map((form) => form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+    'g',
+  );
+  return text.replace(pattern, '[redacted]');
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 // noinspection ES6PreferShortImport
-import { redactCredentials, redactError } from '../../src/utils/redact.js';
+import { redactCredentials, redactSecrets } from '../../src/utils/redact.js';
+
+const SECRET = 'a/b+c=d e';
 
 describe('redactCredentials', () => {
   it.each([
@@ -41,25 +43,25 @@ describe('redactCredentials', () => {
   });
 });
 
-describe('redactError', () => {
-  it('redacts message, stdout and stderr and keeps code and status', () => {
-    const original = Object.assign(new Error('failed https://u:pw0rd@h/x'), {
-      code: 'E1',
-      status: 3,
-      stdout: 'out https://u:pw0rd@h/x',
-      stderr: 'err ghp_abcdefghijklmnopqrstuvwxyz0123456789',
-    });
-    const copy = redactError(original);
-    expect(copy.message).toBe('failed https://***@h/x');
-    expect(copy).toMatchObject({
-      code: 'E1',
-      status: 3,
-      stdout: 'out https://***@h/x',
-      stderr: 'err ***',
-    });
+describe('redactSecrets', () => {
+  it.each([
+    ['as it is', SECRET],
+    ['percent-encoded', encodeURIComponent(SECRET)],
+    ['form-encoded', new URLSearchParams({ s: SECRET }).toString().slice(2)],
+    ['JSON-escaped', 'a\\/b+c=d e'],
+  ])('removes the secret %s', (_form, echoed) => {
+    expect(redactSecrets(`bad ?token=${echoed}&x`, [SECRET])).toBe(
+      'bad ?token=[redacted]&x',
+    );
   });
 
-  it('wraps a thrown string', () => {
-    expect(redactError('https://u:pw0rd@h/x').message).toBe('https://***@h/x');
+  it('removes every secret and every occurrence', () => {
+    expect(redactSecrets('a b a c', ['a', 'c'])).toBe(
+      '[redacted] b [redacted] [redacted]',
+    );
+  });
+
+  it('ignores empty secrets', () => {
+    expect(redactSecrets('text', [''])).toBe('text');
   });
 });
