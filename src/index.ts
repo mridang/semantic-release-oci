@@ -132,6 +132,7 @@ export async function prepare(
     sha256,
     buildId,
     tags,
+    version: nextRelease.version,
     repo,
     isBuildx: strategy.isBuildx,
   });

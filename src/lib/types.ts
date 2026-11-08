@@ -7,6 +7,10 @@ export interface BuildState {
   readonly sha256: string;
   readonly buildId: string;
   readonly tags: readonly string[];
+  /**
+   * The release version, used to push the version tag before the floating ones.
+   */
+  readonly version: string;
   readonly repo: string;
   readonly isBuildx: boolean;
 }

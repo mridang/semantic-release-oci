@@ -93,6 +93,9 @@ All options are case-sensitive and lowercased in the JSON configuration.
   Tag templates with `{{variable}}` substitution. Available variables:
   `version`, `major`, `minor`, `patch`, `gitTag`, `gitHead`, `channel`,
   `type`, `now`. Default: `['latest', '{{major}}-latest', '{{version}}']`.
+  Tags that contain the release version are pushed first and the other
+  (floating) tags after them, so a failed push cannot leave `latest` pointing
+  at a release whose version tag is missing.
 
 - **`dockerArgs` (object, optional):**
   Build arguments as key-value pairs. Values support `{{variable}}`

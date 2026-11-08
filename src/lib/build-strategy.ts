@@ -110,9 +110,24 @@ export class BuildStrategy extends ImageStrategy {
   }
 
   /**
-   * For non-buildx builds, tags and pushes each version tag, then removes
-   * the local images when auto-clean is enabled. Buildx builds push
-   * during the build step, so this is a no-op for them.
+   * The tags with the ones that contain the release version first.
+   *
+   * @param state The stored build state.
+   * @returns The tags in push order.
+   */
+  private versionTagsFirst(state: BuildState): readonly string[] {
+    const hasVersion = (tag: string): number =>
+      Number(state.version !== '' && tag.includes(state.version));
+    return state.tags.toSorted((a, b) => hasVersion(b) - hasVersion(a));
+  }
+
+  /**
+   * For non-buildx builds, tags and pushes each tag, then removes the local
+   * images when auto-clean is enabled. Buildx builds push during the build
+   * step, so this is a no-op for them. Tags that contain the release version
+   * are pushed first and floating ones such as `latest` after them, so a
+   * failed push can never leave a floating tag on a release that has no
+   * version tag in the registry; the order of the rest is kept.
    *
    * @param state The stored build state.
    */
@@ -120,7 +135,7 @@ export class BuildStrategy extends ImageStrategy {
     const { config, context } = this;
 
     if (!state.isBuildx && config.isPublishEnabled()) {
-      for (const tag of state.tags) {
+      for (const tag of this.versionTagsFirst(state)) {
         this.exec(
           ['tag', `${state.repo}:${state.buildId}`, `${state.repo}:${tag}`],
           { timeout: config.getDockerTimeout() },

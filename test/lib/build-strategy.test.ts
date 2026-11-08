@@ -594,6 +594,7 @@ describe('BuildStrategy', () => {
         sha256: 'abc123',
         buildId: 'buildid01',
         tags: ['latest', '1-latest', '1.2.3'],
+        version: '1.2.3',
         repo: 'my-app',
         isBuildx: false,
         ...overrides,
@@ -612,6 +613,71 @@ describe('BuildStrategy', () => {
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should push the version tag before the floating tags', () => {
+      const tmpDir = makeTempDir();
+      const { strategy } = makeStrategy(tmpDir, {
+        dockerImage: 'my-app',
+        dockerAutoClean: false,
+      });
+
+      strategy.finalizePublish(makeState());
+
+      const pushed = execMock.mock.calls
+        .map((c) => c[0])
+        .filter((a) => a[0] === 'push')
+        .map((a) => a[1]);
+      expect(pushed).toEqual([
+        'my-app:1.2.3',
+        'my-app:latest',
+        'my-app:1-latest',
+      ]);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should leave the floating tags unpushed when the version push fails', () => {
+      const tmpDir = makeTempDir();
+      const { strategy } = makeStrategy(tmpDir, {
+        dockerImage: 'my-app',
+        dockerAutoClean: false,
+      });
+      execMock.mockImplementation((args) => {
+        if (args[0] === 'push') {
+          throw new Error('denied');
+        }
+        return '';
+      });
+
+      expect(() => strategy.finalizePublish(makeState())).toThrow('denied');
+
+      const pushes = execMock.mock.calls.filter((c) => c[0][0] === 'push');
+      expect(pushes.map((c) => c[0][1])).toEqual(['my-app:1.2.3']);
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should keep the order of the tags when there is no version', () => {
+      const tmpDir = makeTempDir();
+      const { strategy } = makeStrategy(tmpDir, {
+        dockerImage: 'my-app',
+        dockerAutoClean: false,
+      });
+
+      strategy.finalizePublish(makeState({ version: '' }));
+
+      const pushed = execMock.mock.calls
+        .map((c) => c[0])
+        .filter((a) => a[0] === 'push')
+        .map((a) => a[1]);
+      expect(pushed).toEqual([
+        'my-app:latest',
+        'my-app:1-latest',
+        'my-app:1.2.3',
+      ]);
 
       fs.rmSync(tmpDir, { recursive: true });
     });
