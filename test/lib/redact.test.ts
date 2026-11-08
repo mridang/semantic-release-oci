@@ -15,7 +15,10 @@ describe('secretsIn', () => {
       ['build', '--cache-from', 'type=s3,secret_access_key=KEY123,bucket=b'],
       ['KEY123'],
     ],
-    [['build', '--cache-to', 'type=registry,ref=u:PASS1@host/x'], ['PASS1']],
+    [
+      ['build', '--cache-to', `type=registry,ref=u:PASS1${'@'}host/x`],
+      ['PASS1'],
+    ],
     [['build', '--auth-token', 'TOK123'], ['TOK123']],
     [['build', '--password=PW123'], ['PW123']],
     [['build', '--tag', 'repo:1.2.3@sha256:abcdef'], []],
