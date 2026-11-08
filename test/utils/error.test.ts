@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { messageOf } from '../../src/utils/error.js';
+import { codeOf, messageOf } from '../../src/utils/error.js';
 
 describe('messageOf', () => {
   it('reads the message of an Error', () => {
@@ -13,4 +13,19 @@ describe('messageOf', () => {
   ])('stringifies the non-error %s', (value, expected) => {
     expect(messageOf(value)).toBe(expected);
   });
+});
+
+describe('codeOf', () => {
+  it('reads the code of an error', () => {
+    expect(codeOf(Object.assign(new Error('x'), { code: 'ENOENT' }))).toBe(
+      'ENOENT',
+    );
+  });
+
+  it.each([new Error('x'), 'ENOENT', null, { code: 5 }])(
+    'gives undefined for %s',
+    (value) => {
+      expect(codeOf(value)).toBeUndefined();
+    },
+  );
 });

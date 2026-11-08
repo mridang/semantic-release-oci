@@ -7,11 +7,17 @@ import {
   afterEach,
 } from '@jest/globals';
 import { execFileSync } from 'node:child_process';
+import type { setSecret } from '@actions/core';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 
 const execFileSyncMock = jest.fn<typeof execFileSync>();
+const setSecretMock = jest.fn<typeof setSecret>();
+
+jest.unstable_mockModule('@actions/core', () => ({
+  setSecret: setSecretMock,
+}));
 
 jest.unstable_mockModule('node:child_process', () => ({
   execFileSync: execFileSyncMock,
@@ -34,11 +40,13 @@ function makeStrategy(
 describe('ImageStrategy', () => {
   beforeEach(() => {
     execFileSyncMock.mockReset();
+    setSecretMock.mockReset();
     execFileSyncMock.mockReturnValue('build output\n');
   });
 
   afterEach(() => {
     execFileSyncMock.mockReset();
+    setSecretMock.mockReset();
   });
 
   describe('exec', () => {
@@ -146,7 +154,7 @@ describe('ImageStrategy', () => {
       expect(strategy.exec(['build'])).toBe('');
     });
 
-    it('should mask build-arg values in the logged command', () => {
+    it('should mask build-arg values in the logged command, keeping the argv intact', () => {
       const { strategy, context } = makeStrategy({ dockerImage: 'x' });
 
       strategy.exec([
@@ -167,56 +175,188 @@ describe('ImageStrategy', () => {
       expect(execFileSyncMock.mock.calls[0][1]).toContain('TOKEN=s3cr3t');
     });
 
-    it('should not leak build-arg values in the error of a failed command', () => {
+    it('should mask a value that contains = and .args. from the first =', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec([
+        'buildx',
+        'bake',
+        '--set',
+        '*.args.TOKEN=abc.args.k=tail',
+      ]);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        'Executing: docker buildx bake --set *.args.TOKEN=***',
+      );
+    });
+
+    it('should mask the joined --build-arg= and --set= forms', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec([
+        'build',
+        '--build-arg=TOKEN=JOINEDSECRET',
+        '--set=*.args.TOKEN=SETSECRET',
+      ]);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        'Executing: docker build --build-arg=TOKEN=*** --set=*.args.TOKEN=***',
+      );
+    });
+
+    it('should mask credentials inside cache specs, flags and the login user', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec([
+        'build',
+        '--cache-from',
+        'type=s3,bucket=b,secret_access_key=S3SECRET',
+        '--cache-to',
+        'type=registry,ref=user:REGPASS@ghcr.io/x/y',
+        '--auth-token',
+        'FLAGSECRET',
+        '--password=JOINEDFLAGSECRET',
+      ]);
+      strategy.exec(['login', '-u', 'token-as-user', '--password-stdin']);
+
+      expect(context.logger.log).toHaveBeenNthCalledWith(
+        1,
+        'Executing: docker build --cache-from type=s3,bucket=b,secret_access_key=*** --cache-to type=registry,ref=user:***@ghcr.io/x/y --auth-token *** --password=***',
+      );
+      expect(context.logger.log).toHaveBeenNthCalledWith(
+        2,
+        'Executing: docker login -u *** --password-stdin',
+      );
+    });
+
+    it('should register every secret with the Actions log masker', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']);
+
+      expect(setSecretMock).toHaveBeenCalledWith('s3cr3t');
+    });
+
+    it('should not scrub values shorter than three characters by value', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
+
+      strategy.exec(['build', '--build-arg', 'N=1', '--tag', 'repo:1']);
+
+      expect(context.logger.log).toHaveBeenCalledWith(
+        'Executing: docker build --build-arg N=*** --tag repo:1',
+      );
+      expect(setSecretMock).not.toHaveBeenCalled();
+    });
+
+    it('should scrub a secret that docker echoes on stderr', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw Object.assign(new Error('Command failed: docker build'), {
+          status: 1,
+          stderr: '#6 [2/2] RUN echo "using s3cr3t" && false',
+        });
+      });
+
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
+      ).toThrow(
+        'Command failed: docker build --build-arg TOKEN=***\n#6 [2/2] RUN echo "using ***" && false',
+      );
+    });
+
+    it('should keep the status, signal and code on the rebuilt error', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw Object.assign(new Error('Command failed: with s3cr3t'), {
+          status: 3,
+          signal: 'SIGTERM',
+          stderr: 'denied',
+        });
+      });
+
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
+      ).toThrow(
+        expect.objectContaining({
+          status: 3,
+          signal: 'SIGTERM',
+          message: 'Command failed: docker build --build-arg TOKEN=***\ndenied',
+        }),
+      );
+    });
+
+    it('should report a failure to run by its code, never by its message', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
       execFileSyncMock.mockImplementation(() => {
         throw Object.assign(
-          new Error('Command failed: docker build --build-arg TOKEN=s3cr3t'),
-          { stderr: 'no such file' },
+          new TypeError('The argument must be a string. Received TOKEN=s3cr3t'),
+          { code: 'ERR_INVALID_ARG_VALUE' },
         );
       });
 
       expect(() =>
         strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
       ).toThrow(
-        'Command failed: docker build --build-arg TOKEN=***\nno such file',
-      );
-    });
-
-    it('should keep the reason when the command could not run at all', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execFileSyncMock.mockImplementation(() => {
-        throw new Error('spawnSync docker ETIMEDOUT');
-      });
-
-      expect(() => strategy.exec(['build'])).toThrow(
-        'Command failed: docker build\nspawnSync docker ETIMEDOUT',
+        expect.objectContaining({
+          code: 'ERR_INVALID_ARG_VALUE',
+          message:
+            'Command failed: docker build --build-arg TOKEN=***\nERR_INVALID_ARG_VALUE',
+        }),
       );
     });
 
     it.each([
-      ['an error without stderr', new Error('Command failed: docker build')],
-      ['a thrown string', 'Command failed: docker build'],
+      ['an error without stderr or code', new Error('Command failed: s3cr3t')],
+      ['an error with a different wording', new Error('boom s3cr3t')],
     ])('should report only the command for %s', (_name, thrown) => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
       execFileSyncMock.mockImplementation(() => {
         throw thrown;
       });
 
-      expect(() => strategy.exec(['build'])).toThrow(
-        /^Command failed: docker build$/,
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
+      ).toThrow(/^Command failed: docker build --build-arg TOKEN=\*\*\*$/);
+    });
+
+    it('should scrub a thrown non-error', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw 'plain s3cr3t';
+      });
+
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3cr3t']),
+      ).toThrow(
+        'Command failed: docker build --build-arg TOKEN=***\nplain ***',
       );
     });
 
-    it('should stringify a thrown non-error', () => {
-      const { strategy } = makeStrategy({ dockerImage: 'x' });
-      execFileSyncMock.mockImplementation(() => {
-        throw 'plain';
-      });
+    it('should reject a NUL byte before logging or running anything', () => {
+      const { strategy, context } = makeStrategy({ dockerImage: 'x' });
 
-      expect(() => strategy.exec(['build'])).toThrow(
-        'Command failed: docker build\nplain',
-      );
+      expect(() =>
+        strategy.exec(['build', '--build-arg', 'TOKEN=s3\0cr3t']),
+      ).toThrow('Docker argument 2 contains a NUL byte.');
+      expect(execFileSyncMock).not.toHaveBeenCalled();
+      expect(context.logger.log).not.toHaveBeenCalled();
+    });
+
+    it('should pass values literally: no $VAR, ~ or shell quotes are interpreted', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      const args = [
+        'build',
+        '--secret',
+        'id=npm,src=$HOME/.npmrc',
+        '--build-arg',
+        'DIR=~/work',
+        '--build-arg',
+        'MSG="hello world"',
+      ];
+
+      strategy.exec(args);
+
+      expect(execFileSyncMock.mock.calls[0][1]).toEqual(args);
     });
 
     it('should log the executed command', () => {
@@ -240,11 +380,27 @@ describe('ImageStrategy', () => {
     it('should throw ENOENT when docker is unavailable', () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
       execFileSyncMock.mockImplementation(() => {
-        throw new Error('spawn docker ENOENT');
+        throw Object.assign(new Error('spawnSync docker ENOENT'), {
+          code: 'ENOENT',
+        });
       });
 
       expect(() => strategy.verifyDocker()).toThrow(
-        expect.objectContaining({ code: 'ENOENT' }),
+        'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
+      );
+    });
+
+    it('should rethrow any other failure with its detail', () => {
+      const { strategy } = makeStrategy({ dockerImage: 'x' });
+      execFileSyncMock.mockImplementation(() => {
+        throw Object.assign(new Error('Command failed'), {
+          status: 1,
+          stderr: 'Cannot connect to the Docker daemon',
+        });
+      });
+
+      expect(() => strategy.verifyDocker()).toThrow(
+        'Command failed: docker version\nCannot connect to the Docker daemon',
       );
     });
   });

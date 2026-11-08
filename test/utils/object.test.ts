@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { isRecord, stringAt } from '../../src/utils/object.js';
+import { isRecord, numberAt, stringAt } from '../../src/utils/object.js';
 
 describe('isRecord', () => {
   it('accepts plain objects', () => {
@@ -23,5 +23,17 @@ describe('stringAt', () => {
     expect(stringAt(record, 'n')).toBeUndefined();
     expect(stringAt(record, 'other')).toBeUndefined();
     expect(stringAt(record, 'missing')).toBeUndefined();
+  });
+});
+
+describe('numberAt', () => {
+  it('reads a number property', () => {
+    expect(numberAt({ n: 0 }, 'n')).toBe(0);
+  });
+
+  it('gives undefined for a missing property or the wrong type', () => {
+    expect(numberAt({ n: '1', z: null }, 'n')).toBeUndefined();
+    expect(numberAt({ z: null }, 'z')).toBeUndefined();
+    expect(numberAt({}, 'n')).toBeUndefined();
   });
 });

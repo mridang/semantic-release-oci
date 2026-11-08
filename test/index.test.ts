@@ -42,7 +42,9 @@ describe('semantic-release-oci', () => {
       writePackageJson(tmpDir, 'my-app');
       writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
-        throw new Error('spawn docker ENOENT');
+        throw Object.assign(new Error('spawn docker ENOENT'), {
+          code: 'ENOENT',
+        });
       });
 
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(

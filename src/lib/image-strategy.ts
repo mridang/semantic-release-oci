@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
-import { messageOf } from '../utils/error.js';
-import { isRecord, stringAt } from '../utils/object.js';
+import { codeOf } from '../utils/error.js';
+import { isRecord, numberAt, stringAt } from '../utils/object.js';
+import { maskAssignments, scrub, secretsIn } from './redact.js';
 import { OciConfig } from '../plugin-config.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
 
@@ -22,23 +24,45 @@ interface ExecOptions {
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 /**
- * The args as they may be shown in a log or an error: the value of every
- * build argument is replaced, because build arguments commonly carry tokens.
- *
- * @param args Docker arguments.
- * @returns The arguments with build-argument values masked.
+ * A docker command that did not succeed. It carries the exit status, signal
+ * and error code of the failure, but its message is rebuilt from redacted
+ * parts only: the error Node throws embeds the full command line.
  */
-function redactArgs(args: readonly string[]): readonly string[] {
-  return args.map((arg, index) => {
-    const flag = args[index - 1];
-    if (flag === '--build-arg') {
-      return arg.replace(/=.*$/s, '=***');
-    }
-    if (flag === '--set') {
-      return arg.replace(/^(.*\.args\.[^=]*)=.*$/s, '$1=***');
-    }
-    return arg;
-  });
+class DockerCommandError extends Error {
+  readonly status: number | undefined;
+
+  readonly signal: string | undefined;
+
+  readonly code: string | undefined;
+
+  /**
+   * @param message The redacted message.
+   * @param source  The error that was thrown by the child process call.
+   */
+  constructor(message: string, source: unknown) {
+    super(message);
+    this.name = 'DockerCommandError';
+    this.status = isRecord(source) ? numberAt(source, 'status') : undefined;
+    this.signal = isRecord(source) ? stringAt(source, 'signal') : undefined;
+    this.code = codeOf(source);
+  }
+}
+
+/**
+ * What a failed docker call has to say, chosen by the shape of the failure
+ * and never by its message text: a command that ran reports its stderr, and
+ * one that could not run (no binary, timeout, bad argument) reports its
+ * error code.
+ *
+ * @param error The value thrown by the child process call.
+ * @returns The detail, which is not yet scrubbed.
+ */
+function detailOf(error: unknown): string | undefined {
+  const code = codeOf(error);
+  if (code !== undefined) {
+    return code;
+  }
+  return isRecord(error) ? stringAt(error, 'stderr') : String(error);
 }
 
 /**
@@ -82,7 +106,16 @@ export abstract class ImageStrategy {
    * @returns       The command's stdout, or an empty string.
    */
   exec(args: readonly string[], options: ExecOptions = {}): string {
-    const shown = ['docker', ...redactArgs(args)].join(' ');
+    const nul = args.findIndex((arg) => arg.includes('\0'));
+    if (nul >= 0) {
+      throw new Error(`Docker argument ${nul} contains a NUL byte.`);
+    }
+    const secrets = secretsIn(args);
+    secrets.forEach((secret) => setSecret(secret));
+    const shown = scrub(
+      ['docker', ...maskAssignments(args)].join(' '),
+      secrets,
+    );
     this.context.logger.log(`Executing: ${shown}`);
     try {
       const result = execFileSync('docker', [...args], {
@@ -96,15 +129,11 @@ export abstract class ImageStrategy {
       });
       return typeof result === 'string' ? result : '';
     } catch (error: unknown) {
-      // The error from the child process embeds the full command line, so it
-      // is rebuilt from the redacted one rather than passed on.
-      const reason = messageOf(error);
-      const detail = reason.startsWith('Command failed:')
-        ? isRecord(error)
-          ? stringAt(error, 'stderr')
-          : undefined
-        : reason;
-      throw new Error(`Command failed: ${shown}${detail ? `\n${detail}` : ''}`);
+      const detail = scrub(detailOf(error) ?? '', secrets);
+      throw new DockerCommandError(
+        `Command failed: ${shown}${detail ? `\n${detail}` : ''}`,
+        error,
+      );
     }
   }
 
@@ -155,7 +184,10 @@ export abstract class ImageStrategy {
   verifyDocker(): void {
     try {
       this.exec(['version'], { timeout: this.config.getDockerTimeout() });
-    } catch {
+    } catch (error: unknown) {
+      if (codeOf(error) !== 'ENOENT') {
+        throw error;
+      }
       throw new SemanticReleaseError(
         'Docker is not installed or not available in PATH. Ensure Docker is installed and accessible.',
         'ENOENT',
