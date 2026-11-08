@@ -264,15 +264,6 @@ export class OciConfig {
   }
 
   /**
-   * Whether Docker Bake mode is enabled via the `dockerBake` option.
-   *
-   * @returns `true` when bake settings are present.
-   */
-  isBakeEnabled(): boolean {
-    return this.getDockerBake() !== undefined;
-  }
-
-  /**
    * Registry username from the `DOCKER_REGISTRY_USER` env variable.
    *
    * @returns Username or `undefined`.

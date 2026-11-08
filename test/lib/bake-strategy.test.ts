@@ -32,13 +32,14 @@ function makeStrategy(
   contextOverrides: Readonly<Record<string, unknown>> = {},
 ): { strategy: BakeStrategy; context: VerifyConditionsContext } {
   const context = stepContext(cwd, {}, contextOverrides);
-  const config = new OciConfig(pluginConfig, context.env);
-  const bake = config.getDockerBake() ?? {
-    file: 'docker-bake.hcl',
-    group: undefined,
-    target: undefined,
-    imageTarget: '*',
-  };
+  const config = new OciConfig(
+    { dockerBake: {}, ...pluginConfig },
+    context.env,
+  );
+  const bake = config.getDockerBake();
+  if (!bake) {
+    throw new Error('dockerBake must be configured for the bake strategy');
+  }
   return { strategy: new BakeStrategy(config, context, bake), context };
 }
 

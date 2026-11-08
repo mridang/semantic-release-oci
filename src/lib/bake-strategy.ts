@@ -56,6 +56,11 @@ export function parseBakeDigest(
  */
 export class BakeStrategy extends ImageStrategy {
   /**
+   * Bake always pushes during the build, through each target's `output`.
+   */
+  readonly isBuildx = true;
+
+  /**
    * @param config  Resolved plugin configuration.
    * @param context Semantic-release context with cwd, env, and logger.
    * @param bake    The resolved `dockerBake` settings.

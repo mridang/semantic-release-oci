@@ -20,14 +20,14 @@ const buildStates = new Map<string, BuildState>();
  * repository path treats a missing name as empty.
  *
  * @param config  Resolved plugin configuration.
- * @param context Semantic-release context (for cwd).
+ * @param cwd     Directory the release runs in.
  * @returns       The resolved image name and repository path.
  */
 function resolveImage(
   config: OciConfig,
-  context: VerifyConditionsContext,
+  cwd: string,
 ): { readonly imageName: string | undefined; readonly repo: string } {
-  const pkg = readPkg(context.cwd ?? process.cwd());
+  const pkg = readPkg(cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? undefined;
   const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
@@ -56,7 +56,7 @@ export async function verifyConditions(
 
   strategy.verifyDocker();
 
-  const { imageName } = resolveImage(config, context);
+  const { imageName } = resolveImage(config, strategy.cwd);
 
   if (!imageName) {
     throw new SemanticReleaseError(
@@ -84,7 +84,8 @@ export async function prepare(
   context: PrepareContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const { repo } = resolveImage(config, context);
+  const strategy = selectStrategy(config, context);
+  const { repo } = resolveImage(config, strategy.cwd);
   const isDryRun = context.options.dryRun === true;
 
   const { nextRelease } = context;
@@ -103,9 +104,8 @@ export async function prepare(
   } satisfies Record<string, string | number | undefined>;
 
   const buildId = crypto.randomBytes(10).toString('hex');
-  const isBuildx = config.isBakeEnabled() || config.isBuildxEnabled();
 
-  const { sha256, tags } = selectStrategy(config, context).build({
+  const { sha256, tags } = strategy.build({
     repo,
     tagTemplates: config.getDockerTags(),
     vars,
@@ -120,7 +120,7 @@ export async function prepare(
     buildId,
     tags,
     repo,
-    isBuildx,
+    isBuildx: strategy.isBuildx,
   });
 
   context.logger.log(`Docker image built: ${repo}:${buildId} (sha: ${sha})`);
@@ -138,7 +138,8 @@ export async function publish(
   context: PublishContext,
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
-  const { repo } = resolveImage(config, context);
+  const strategy = selectStrategy(config, context);
+  const { repo } = resolveImage(config, strategy.cwd);
   const state = buildStates.get(repo);
 
   if (!state) {
@@ -146,7 +147,7 @@ export async function publish(
     return;
   }
 
-  selectStrategy(config, context).finalizePublish(state);
+  strategy.finalizePublish(state);
 
   try {
     actions.setOutput('docker_image', state.repo);

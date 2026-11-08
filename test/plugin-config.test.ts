@@ -35,14 +35,12 @@ describe('OciConfig', () => {
       expect(config.isBuildxEnabled()).toBe(false);
       expect(config.getDockerTimeout()).toBe(600_000);
       expect(config.getDockerBake()).toBeUndefined();
-      expect(config.isBakeEnabled()).toBe(false);
     });
   });
 
   describe('bake', () => {
     it('should report bake disabled when not configured', () => {
       const config = makeConfig();
-      expect(config.isBakeEnabled()).toBe(false);
       expect(config.getDockerBake()).toBeUndefined();
     });
 
@@ -50,14 +48,12 @@ describe('OciConfig', () => {
       'should treat dockerBake: %s from a plain config file as not configured',
       (raw) => {
         const config = makeConfig(JSON.parse(`{ "dockerBake": ${raw} }`));
-        expect(config.isBakeEnabled()).toBe(false);
         expect(config.getDockerBake()).toBeUndefined();
       },
     );
 
     it('should apply defaults when bake is configured empty', () => {
       const config = makeConfig({ dockerBake: {} });
-      expect(config.isBakeEnabled()).toBe(true);
       expect(config.getDockerBake()).toEqual({
         file: 'docker-bake.hcl',
         group: undefined,

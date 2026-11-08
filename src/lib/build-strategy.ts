@@ -14,6 +14,13 @@ const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
  */
 export class BuildStrategy extends ImageStrategy {
   /**
+   * Buildx is used when platforms are configured.
+   */
+  get isBuildx(): boolean {
+    return this.config.isBuildxEnabled();
+  }
+
+  /**
    * Verifies the configured Dockerfile exists.
    *
    * @returns A log label naming the verified Dockerfile.
@@ -39,7 +46,7 @@ export class BuildStrategy extends ImageStrategy {
     const { config, cwd } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
-    const isBuildx = config.isBuildxEnabled();
+    const { isBuildx } = this;
     const network = config.getDockerNetwork();
 
     const extraFlags = Object.entries(config.getDockerBuildFlags()).flatMap(

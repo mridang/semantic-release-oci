@@ -53,7 +53,13 @@ export abstract class ImageStrategy {
   /**
    * The directory every command runs in.
    */
-  protected readonly cwd: string;
+  readonly cwd: string;
+
+  /**
+   * Whether the build step itself pushes the image (buildx and bake), so that
+   * nothing is left to tag, push or clean up at publish time.
+   */
+  abstract readonly isBuildx: boolean;
 
   /**
    * @param config  Resolved plugin configuration.
