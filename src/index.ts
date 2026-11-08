@@ -14,6 +14,19 @@ import type { BuildState } from './lib/types.js';
 const buildStates = new Map<string, BuildState>();
 
 /**
+ * The key a build is stored under between `prepare` and `publish`: the
+ * repository plus the directory it was built from, so that two builds of the
+ * same repository from different directories cannot replace each other.
+ *
+ * @param cwd  Directory the release runs in.
+ * @param repo Full image repository path.
+ * @returns    A key unique to that pair.
+ */
+function stateKey(cwd: string, repo: string): string {
+  return JSON.stringify([cwd, repo]);
+}
+
+/**
  * Resolves the image name and full repository path from config, falling
  * back to the `package.json` name and scope. The image name is
  * `undefined` when neither config nor package.json provides one; the
@@ -114,7 +127,7 @@ export async function prepare(
   });
   const sha = sha256 ? sha256.substring(0, 12) : buildId;
 
-  buildStates.set(repo, {
+  buildStates.set(stateKey(strategy.cwd, repo), {
     sha,
     sha256,
     buildId,
@@ -140,7 +153,8 @@ export async function publish(
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
   const { repo } = resolveImage(config, strategy.cwd);
-  const state = buildStates.get(repo);
+  const key = stateKey(strategy.cwd, repo);
+  const state = buildStates.get(key);
 
   if (!state) {
     context.logger.log('No build state found. Skipping publish.');
@@ -148,6 +162,7 @@ export async function publish(
   }
 
   strategy.finalizePublish(state);
+  buildStates.delete(key);
 
   try {
     actions.setOutput('docker_image', state.repo);

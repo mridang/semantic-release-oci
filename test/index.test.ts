@@ -283,6 +283,49 @@ describe('semantic-release-oci', () => {
   });
 
   describe('publish', () => {
+    it('should consume the build state so a second publish is skipped', async () => {
+      const tmpDir = makeTempDir();
+      writeDockerfile(tmpDir);
+      const context = stepContext(tmpDir);
+      await prepare({ dockerImage: 'consumed' }, context);
+      await publish({ dockerImage: 'consumed' }, context);
+      execMock.mockClear();
+
+      await publish({ dockerImage: 'consumed' }, context);
+
+      expect(execMock).not.toHaveBeenCalled();
+      expect(context.logger.log).toHaveBeenLastCalledWith(
+        'No build state found. Skipping publish.',
+      );
+
+      fs.rmSync(tmpDir, { recursive: true });
+    });
+
+    it('should keep builds of the same repository from different directories apart', async () => {
+      const first = makeTempDir();
+      const second = makeTempDir();
+      writeDockerfile(first);
+      writeDockerfile(second);
+      const config = { dockerImage: 'shared', dockerTags: ['1.2.3'] };
+      await prepare(config, stepContext(first));
+      await prepare(config, stepContext(second));
+      const [firstTag] = execMock.mock.calls
+        .filter(([args]) => args[0] === 'build')
+        .map(([args]) => args[args.indexOf('--tag') + 1]);
+      execMock.mockClear();
+
+      await publish(config, stepContext(first));
+
+      expect(execMock.mock.calls[0][0]).toEqual([
+        'tag',
+        firstTag,
+        'shared:1.2.3',
+      ]);
+
+      fs.rmSync(first, { recursive: true });
+      fs.rmSync(second, { recursive: true });
+    });
+
     it('should skip publish when no build state exists', async () => {
       const tmpDir = makeTempDir();
       writeDockerfile(tmpDir);
