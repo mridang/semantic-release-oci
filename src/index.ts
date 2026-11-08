@@ -121,7 +121,7 @@ export async function prepare(
   const isDryRun = context.options.dryRun === true;
 
   const { nextRelease } = context;
-  const [major = '', minor = '', patch = ''] = nextRelease.version.split('.');
+  const [major, minor = '', patch = ''] = nextRelease.version.split('.');
   const vars = {
     version: nextRelease.version,
     major,

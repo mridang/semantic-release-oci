@@ -101,6 +101,13 @@ All options are case-sensitive and lowercased in the JSON configuration.
   Build arguments as key-value pairs. Values support `{{variable}}`
   templates. Set a value to `true` to pass the key as a build arg
   sourced from the environment.
+  Values are passed to docker literally: docker is started directly and not
+  through a shell, so `$VAR`, `~` and shell quotes in a value (or in
+  `dockerBuildFlags`, `dockerBuildCacheFrom` and the other options) are not
+  expanded or interpreted, and a value containing spaces needs no quoting.
+  Use `{{variable}}` templates or an absolute path where you relied on
+  `$HOME` or `~`. The values of build arguments are hidden in logged commands
+  and in error output.
 
 - **`dockerBuildFlags` (object, optional):**
   Additional docker build flags. Keys are flag names, values are strings,

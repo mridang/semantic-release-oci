@@ -16,7 +16,7 @@ export function parsePkgName(pkgname: string): {
 } {
   const match = NAME_EXP.exec(pkgname);
   if (!match) return { scope: null, name: null };
-  return { scope: match[1] ?? null, name: match[2] ?? null };
+  return { scope: match[1] ?? null, name: match[2] };
 }
 
 /**
