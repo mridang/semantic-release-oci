@@ -1,12 +1,10 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 import { parsePkgName, readPkg, buildImageRepo } from '../../src/lib/pkg.js';
 
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
-}
+afterEach(removeTempDirs);
 
 describe('parsePkgName', () => {
   it('should split a scoped package name into scope and name', () => {
@@ -34,16 +32,12 @@ describe('readPkg', () => {
     );
 
     expect(readPkg(tmpDir)).toEqual({ name: 'my-app' });
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return null when package.json is absent', () => {
     const tmpDir = makeTempDir();
 
     expect(readPkg(tmpDir)).toBeNull();
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return null when package.json is not an object', () => {
@@ -51,8 +45,6 @@ describe('readPkg', () => {
     fs.writeFileSync(path.join(tmpDir, 'package.json'), '"just a string"');
 
     expect(readPkg(tmpDir)).toBeNull();
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should ignore a name that is not a string', () => {
@@ -60,8 +52,6 @@ describe('readPkg', () => {
     fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ "name": 7 }');
 
     expect(readPkg(tmpDir)?.name).toBeUndefined();
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return null when package.json is malformed', () => {
@@ -69,8 +59,6 @@ describe('readPkg', () => {
     fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ not valid json');
 
     expect(readPkg(tmpDir)).toBeNull();
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 });
 

@@ -8,17 +8,13 @@ import {
 } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { BakeStrategy, parseBakeDigest } from '../../src/lib/bake-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams } from '../../src/lib/types.js';
 import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
+import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 import { stepContext } from '../utils/context.js';
-
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
-}
 
 function writeBakeFile(dir: string): string {
   const file = path.join(dir, 'docker-bake.hcl');
@@ -53,6 +49,8 @@ const baseParams: BuildParams = {
   isDryRun: false,
 };
 
+afterEach(removeTempDirs);
+
 describe('parseBakeDigest', () => {
   it('should return the named target digest without the sha256 prefix', () => {
     const tmpDir = makeTempDir();
@@ -66,8 +64,6 @@ describe('parseBakeDigest', () => {
     );
 
     expect(parseBakeDigest(file, 'image')).toBe('abc123');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should fall back to the first target with a digest for wildcard', () => {
@@ -82,8 +78,6 @@ describe('parseBakeDigest', () => {
     );
 
     expect(parseBakeDigest(file, '*')).toBe('def456');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it.each([
@@ -100,8 +94,6 @@ describe('parseBakeDigest', () => {
 
     expect(parseBakeDigest(file, '*')).toBe('');
     expect(parseBakeDigest(file, 'image')).toBe('');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should not treat an inherited property as the preferred target', () => {
@@ -113,8 +105,6 @@ describe('parseBakeDigest', () => {
     );
 
     expect(parseBakeDigest(file, 'constructor')).toBe('abc123');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return empty string when the metadata file is missing', () => {
@@ -127,8 +117,6 @@ describe('parseBakeDigest', () => {
     fs.writeFileSync(file, '["sha256:abc"]');
 
     expect(parseBakeDigest(file, '*')).toBe('');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 
   it('should return empty string on malformed metadata', () => {
@@ -137,8 +125,6 @@ describe('parseBakeDigest', () => {
     fs.writeFileSync(file, 'not json');
 
     expect(parseBakeDigest(file, '*')).toBe('');
-
-    fs.rmSync(tmpDir, { recursive: true });
   });
 });
 
@@ -162,8 +148,6 @@ describe('BakeStrategy', () => {
       });
 
       expect(strategy.verifyTarget()).toBe(`bakeFile="${file}"`);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should throw EINVAL when neither group nor target is set', () => {
@@ -174,8 +158,6 @@ describe('BakeStrategy', () => {
       expect(() => strategy.verifyTarget()).toThrow(
         expect.objectContaining({ code: 'EINVAL' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should throw ENOENT when the bake file does not exist', () => {
@@ -187,8 +169,6 @@ describe('BakeStrategy', () => {
       expect(() => strategy.verifyTarget()).toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -210,8 +190,6 @@ describe('BakeStrategy', () => {
       const tagSet = args.find((a) => a.startsWith('image.tags='));
       expect(tagSet).toContain('my-app:1.2.3');
       expect(args[args.length - 1]).toBe('release');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should emit one --set tags override per tag', () => {
@@ -229,8 +207,6 @@ describe('BakeStrategy', () => {
         'image.tags=my-app:latest',
         'image.tags=my-app:1.2.3',
       ]);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should scope tags to the wildcard target by default', () => {
@@ -245,8 +221,6 @@ describe('BakeStrategy', () => {
       const args = execMock.mock.calls[0][0];
       const tagSet = args.find((a) => a.startsWith('*.tags='));
       expect(tagSet).toContain('my-app:1.2.3');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use cacheonly output and no tags in dry-run mode', () => {
@@ -261,8 +235,6 @@ describe('BakeStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.output=type=cacheonly');
       expect(args.some((a) => a.startsWith('image.tags='))).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should forward dockerArgs as bake --set args', () => {
@@ -277,8 +249,6 @@ describe('BakeStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('*.args.VERSION=1.2.3');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip boolean dockerArgs', () => {
@@ -293,8 +263,6 @@ describe('BakeStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args.some((a) => a.includes('FROM_ENV'))).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should prefer target over group as the selector', () => {
@@ -308,8 +276,6 @@ describe('BakeStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args[args.length - 1]).toBe('image');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should capture the digest from the metadata file', () => {
@@ -333,8 +299,6 @@ describe('BakeStrategy', () => {
 
       expect(sha256).toBe('abc123');
       expect(tags).toEqual(['1.2.3']);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should remove the metadata file after the build', () => {
@@ -360,8 +324,6 @@ describe('BakeStrategy', () => {
 
       expect(metadataPath).not.toBe('');
       expect(fs.existsSync(metadataPath)).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should remove the metadata file even when the build fails', () => {
@@ -381,8 +343,6 @@ describe('BakeStrategy', () => {
       expect(() => strategy.build(baseParams)).toThrow('build failed');
       expect(metadataPath).not.toBe('');
       expect(fs.existsSync(metadataPath)).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -396,8 +356,6 @@ describe('BakeStrategy', () => {
       strategy.finalizePublish();
 
       expect(execMock).not.toHaveBeenCalled();
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 });

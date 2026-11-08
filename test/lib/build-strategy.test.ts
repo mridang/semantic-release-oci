@@ -8,17 +8,13 @@ import {
 } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
 import { ImageStrategy } from '../../src/lib/image-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams, BuildState } from '../../src/lib/types.js';
 import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
+import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
 import { stepContext } from '../utils/context.js';
-
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
-}
 
 function writeDockerfile(dir: string, content = 'FROM alpine'): void {
   fs.writeFileSync(path.join(dir, 'Dockerfile'), content);
@@ -44,6 +40,8 @@ const baseParams: BuildParams = {
   isDryRun: false,
 };
 
+afterEach(removeTempDirs);
+
 describe('BuildStrategy', () => {
   let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
 
@@ -64,8 +62,6 @@ describe('BuildStrategy', () => {
       expect(strategy.verifyTarget()).toBe(
         `dockerfile="${path.resolve(tmpDir, 'Dockerfile')}"`,
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should throw ENOENT when the Dockerfile does not exist', () => {
@@ -75,8 +71,6 @@ describe('BuildStrategy', () => {
       expect(() => strategy.verifyTarget()).toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should resolve a custom Dockerfile path', () => {
@@ -91,8 +85,6 @@ describe('BuildStrategy', () => {
       expect(strategy.verifyTarget()).toBe(
         `dockerfile="${path.resolve(tmpDir, 'build/Dockerfile')}"`,
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -112,8 +104,6 @@ describe('BuildStrategy', () => {
       expect(args.some((a) => a === 'my-app:1-latest')).toBe(true);
       expect(args.some((a) => a === 'my-app:1.2.3')).toBe(true);
       expect(args.some((a) => a.startsWith('--network'))).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should tag with the buildId for non-buildx builds', () => {
@@ -125,8 +115,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain(`my-app:${baseParams.buildId}`);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
@@ -142,8 +130,6 @@ describe('BuildStrategy', () => {
         });
 
         expect(tags).toEqual(['v1']);
-
-        fs.rmSync(tmpDir, { recursive: true });
       },
     );
 
@@ -164,8 +150,6 @@ describe('BuildStrategy', () => {
       expect(args).toContain('linux/amd64,linux/arm64');
       expect(args).toContain('--pull');
       expect(args).toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should not include --push in buildx dry-run mode', () => {
@@ -180,8 +164,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).not.toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should omit --push in buildx mode when dockerPublish is false', () => {
@@ -198,8 +180,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('buildx');
       expect(args).not.toContain('--push');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should not tag with buildId in buildx mode', () => {
@@ -215,8 +195,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
       expect(tagArgs.every((t) => !t.match(/:[a-f0-9]{16,}$/))).toBe(true);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should include --pull in buildx mode', () => {
@@ -231,8 +209,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--pull');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip version tags in dry-run mode', () => {
@@ -251,8 +227,6 @@ describe('BuildStrategy', () => {
       expect(tagArgs.length).toBe(1);
       expect(tagArgs[0]).not.toContain('1.2.3');
       expect(tagArgs[0]).not.toContain('latest');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should pass build args with template rendering', () => {
@@ -268,8 +242,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('VERSION=1.2.3');
       expect(args).toContain('STATIC=hello');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should pass boolean build args without value', () => {
@@ -286,8 +258,6 @@ describe('BuildStrategy', () => {
       const buildArgIdx = args.indexOf('GITHUB_TOKEN');
       expect(buildArgIdx).toBeGreaterThan(-1);
       expect(args[buildArgIdx - 1]).toBe('--build-arg');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should include --no-cache when configured', () => {
@@ -302,8 +272,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--no-cache');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should include --cache-from flags in build command', () => {
@@ -319,8 +287,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--cache-from');
       expect(args).toContain('type=local,src=/tmp/cache');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should pass extra build flags', () => {
@@ -337,8 +303,6 @@ describe('BuildStrategy', () => {
       expect(args).toContain('--target');
       expect(args).toContain('production');
       expect(args).toContain('--pull');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should pass provenance flag via dockerBuildFlags', () => {
@@ -355,8 +319,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--provenance');
       expect(args).toContain('false');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use single dash for single-char build flag keys', () => {
@@ -372,8 +334,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('-t');
       expect(args).toContain('production');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should repeat flags for array build flag values', () => {
@@ -394,8 +354,6 @@ describe('BuildStrategy', () => {
       expect(labelIndices.length).toBe(2);
       expect(args[labelIndices[0] + 1]).toBe('foo=bar');
       expect(args[labelIndices[1] + 1]).toBe('baz=qux');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should pass through flag keys that already start with a dash', () => {
@@ -412,8 +370,6 @@ describe('BuildStrategy', () => {
       const idx = args.indexOf('-t');
       expect(idx).toBeGreaterThan(-1);
       expect(args[idx + 1]).toBe('mytag');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should normalize underscore flag keys to kebab-case', () => {
@@ -429,8 +385,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--cache-from');
       expect(args).toContain('type=inline');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should forward dockerTimeout to exec options', () => {
@@ -447,8 +401,6 @@ describe('BuildStrategy', () => {
         expect.anything(),
         expect.objectContaining({ timeout: 1_800_000 }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should omit --quiet when dockerBuildQuiet is false', () => {
@@ -463,8 +415,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).not.toContain('--quiet');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use a custom Dockerfile path in build command', () => {
@@ -480,8 +430,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain(path.resolve(tmpDir, 'build/Dockerfile'));
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use a custom context path in build command', () => {
@@ -497,8 +445,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain(path.resolve(tmpDir, 'app'));
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use a custom network in build command', () => {
@@ -513,8 +459,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args).toContain('--network=host');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should produce no version tags when tags is empty', () => {
@@ -527,8 +471,6 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
       expect(tagArgs.length).toBe(1);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should build with an empty image name', () => {
@@ -540,8 +482,6 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       expect(args.some((a) => a === ':latest')).toBe(true);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should extract the SHA from build output', () => {
@@ -556,8 +496,6 @@ describe('BuildStrategy', () => {
 
       expect(sha256).toBe('abcdef1234567890abcdef1234567890');
       expect(tags).toEqual(['latest', '1-latest', '1.2.3']);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should return an empty SHA when no digest is in build output', () => {
@@ -569,8 +507,6 @@ describe('BuildStrategy', () => {
       const { sha256 } = strategy.build(baseParams);
 
       expect(sha256).toBe('');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should propagate build errors', () => {
@@ -582,8 +518,6 @@ describe('BuildStrategy', () => {
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
       expect(() => strategy.build(baseParams)).toThrow('build failed');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -613,8 +547,6 @@ describe('BuildStrategy', () => {
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should push the version tag before the floating tags', () => {
@@ -635,8 +567,6 @@ describe('BuildStrategy', () => {
         'my-app:latest',
         'my-app:1-latest',
       ]);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should leave the floating tags unpushed when the version push fails', () => {
@@ -656,8 +586,6 @@ describe('BuildStrategy', () => {
 
       const pushes = execMock.mock.calls.filter((c) => c[0][0] === 'push');
       expect(pushes.map((c) => c[0][1])).toEqual(['my-app:1.2.3']);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should keep the order of the tags when there is no version', () => {
@@ -678,8 +606,6 @@ describe('BuildStrategy', () => {
         'my-app:1-latest',
         'my-app:1.2.3',
       ]);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should be a no-op for buildx builds', () => {
@@ -695,8 +621,6 @@ describe('BuildStrategy', () => {
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(0);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
       expect(allArgs.filter((a) => a[0] === 'rmi').length).toBe(0);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should remove images when dockerAutoClean is true', () => {
@@ -711,8 +635,6 @@ describe('BuildStrategy', () => {
 
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(true);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip rmi when no images are found during cleanup', () => {
@@ -727,8 +649,6 @@ describe('BuildStrategy', () => {
 
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should continue gracefully when image cleanup fails', () => {
@@ -746,8 +666,6 @@ describe('BuildStrategy', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         'Image cleanup failed. Continuing.',
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip cleanup when dockerAutoClean is false', () => {
@@ -762,8 +680,6 @@ describe('BuildStrategy', () => {
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.some((a) => a[0] === 'rmi')).toBe(false);
       expect(allArgs.some((a) => a[0] === 'images')).toBe(false);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip push when dockerPublish is false', () => {
@@ -781,8 +697,6 @@ describe('BuildStrategy', () => {
 
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(0);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 });

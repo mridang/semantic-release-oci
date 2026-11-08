@@ -8,14 +8,10 @@ import {
 } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import { ImageStrategy } from '../src/lib/image-strategy.js';
+import { makeTempDir, removeTempDirs } from './utils/tmpdir.js';
 import { stepContext } from './utils/context.js';
-
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-'));
-}
 
 function writePackageJson(dir: string, name: string): void {
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name }));
@@ -24,6 +20,8 @@ function writePackageJson(dir: string, name: string): void {
 function writeDockerfile(dir: string, content = 'FROM alpine'): void {
   fs.writeFileSync(path.join(dir, 'Dockerfile'), content);
 }
+
+afterEach(removeTempDirs);
 
 describe('semantic-release-oci', () => {
   let execMock: jest.SpiedFunction<typeof ImageStrategy.prototype.exec>;
@@ -50,8 +48,6 @@ describe('semantic-release-oci', () => {
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should throw EINVAL when no image name can be determined', async () => {
@@ -61,8 +57,6 @@ describe('semantic-release-oci', () => {
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
         expect.objectContaining({ code: 'EINVAL' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should throw ENOENT when Dockerfile does not exist', async () => {
@@ -72,8 +66,6 @@ describe('semantic-release-oci', () => {
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should verify the bake file instead of the Dockerfile in bake mode', async () => {
@@ -90,8 +82,6 @@ describe('semantic-release-oci', () => {
           stepContext(tmpDir),
         ),
       ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should succeed without credentials when login is disabled', async () => {
@@ -105,8 +95,6 @@ describe('semantic-release-oci', () => {
 
       expect(execMock).toHaveBeenCalledTimes(1);
       expect(execMock.mock.calls[0][0]).toEqual(['version']);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should skip login when credentials are present but login is disabled', async () => {
@@ -126,8 +114,6 @@ describe('semantic-release-oci', () => {
 
       expect(execMock).toHaveBeenCalledTimes(1);
       expect(execMock.mock.calls[0][0]).toEqual(['version']);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should use dockerImage from config over package.json', async () => {
@@ -137,8 +123,6 @@ describe('semantic-release-oci', () => {
       await expect(
         verifyConditions({ dockerImage: 'custom-image' }, stepContext(tmpDir)),
       ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should fall back to package.json name when dockerImage is not set', async () => {
@@ -149,8 +133,6 @@ describe('semantic-release-oci', () => {
       await expect(
         verifyConditions({}, stepContext(tmpDir)),
       ).resolves.toBeUndefined();
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should log a verification summary on success', async () => {
@@ -164,8 +146,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Verified: image="my-app", dockerfile=/),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -184,8 +164,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringContaining('sha: abcdef123456'),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should render the default channel, reported as null, as empty', async () => {
@@ -211,8 +189,6 @@ describe('semantic-release-oci', () => {
       );
 
       expect(execMock.mock.calls[0][0]).toContain('my-app:x');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should render missing version parts as empty', async () => {
@@ -241,8 +217,6 @@ describe('semantic-release-oci', () => {
       );
 
       expect(execMock.mock.calls[0][0]).toContain('my-app:4--');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should resolve paths from the process cwd when the context has none', async () => {
@@ -266,8 +240,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/sha: [a-f0-9]{20}/),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should resolve image name and project from a scoped package.json', async () => {
@@ -281,8 +253,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Docker image built: myorg\/my-app:/),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should fall back to an empty image name with no config or package.json', async () => {
@@ -295,8 +265,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Docker image built: :/),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should propagate build errors', async () => {
@@ -309,8 +277,6 @@ describe('semantic-release-oci', () => {
       await expect(
         prepare({ dockerImage: 'my-app' }, stepContext(tmpDir)),
       ).rejects.toThrow('build failed');
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 
@@ -334,8 +300,6 @@ describe('semantic-release-oci', () => {
 
         const commands = execMock.mock.calls.map(([args]) => args[0]);
         expect(commands).toEqual(['build', 'tag', 'push', 'images']);
-
-        fs.rmSync(tmpDir, { recursive: true });
       },
     );
 
@@ -353,8 +317,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenLastCalledWith(
         'No build state found. Skipping publish.',
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should keep two plugin entries for one image in one directory apart', async () => {
@@ -380,8 +342,6 @@ describe('semantic-release-oci', () => {
         .filter((args) => args[0] === 'push')
         .map((args) => args[1]);
       expect(pushed).toEqual(['twin:A1.2.3', 'twin:B1.2.3']);
-
-      fs.rmSync(dir, { recursive: true });
     });
 
     it('should not publish a build of another release version', async () => {
@@ -409,8 +369,6 @@ describe('semantic-release-oci', () => {
       );
 
       expect(execMock).not.toHaveBeenCalled();
-
-      fs.rmSync(dir, { recursive: true });
     });
 
     it('should refuse to publish when the prepare of this release failed', async () => {
@@ -431,8 +389,6 @@ describe('semantic-release-oci', () => {
       );
 
       expect(execMock).not.toHaveBeenCalled();
-
-      fs.rmSync(dir, { recursive: true });
     });
 
     it('should publish after a prepare that was retried successfully', async () => {
@@ -450,8 +406,6 @@ describe('semantic-release-oci', () => {
       await publish(config, context);
 
       expect(execMock.mock.calls.map(([args]) => args[0])).toContain('push');
-
-      fs.rmSync(dir, { recursive: true });
     });
 
     it('should keep the build when publishing fails so that it can be retried', async () => {
@@ -471,8 +425,6 @@ describe('semantic-release-oci', () => {
       await publish(config, context);
 
       expect(execMock.mock.calls.map(([args]) => args[0])).toContain('push');
-
-      fs.rmSync(dir, { recursive: true });
     });
 
     it('should keep builds of the same repository from different directories apart', async () => {
@@ -495,9 +447,6 @@ describe('semantic-release-oci', () => {
         firstTag,
         'shared:1.2.3',
       ]);
-
-      fs.rmSync(first, { recursive: true });
-      fs.rmSync(second, { recursive: true });
     });
 
     it('should skip publish when no build state exists', async () => {
@@ -511,8 +460,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         'No build state found. Skipping publish.',
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should delegate finalization to the strategy for standard builds', async () => {
@@ -532,8 +479,6 @@ describe('semantic-release-oci', () => {
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'tag').length).toBe(3);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(3);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should publish with a fallback empty image name', async () => {
@@ -555,8 +500,6 @@ describe('semantic-release-oci', () => {
 
       const allArgs = execMock.mock.calls.map((c) => c[0]);
       expect(allArgs.filter((a) => a[0] === 'push').length).toBe(1);
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should resolve the repo from a scoped package.json on publish', async () => {
@@ -576,8 +519,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Published: myorg\/my-app \(tags: /),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
 
     it('should log a published summary on success', async () => {
@@ -597,8 +538,6 @@ describe('semantic-release-oci', () => {
       expect(context.logger.log).toHaveBeenCalledWith(
         expect.stringMatching(/^Published: my-app \(tags: /),
       );
-
-      fs.rmSync(tmpDir, { recursive: true });
     });
   });
 });
