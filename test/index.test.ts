@@ -303,7 +303,7 @@ describe('semantic-release-oci', () => {
 
   // eslint-disable-next-line sonarjs/max-lines-per-function -- splitting this describe would re-indent every test in it
   describe('publish', () => {
-    it.each([null, false])(
+    it.each<null | false>([null, false])(
       'should tag and push as a plain build when dockerBake is %j',
       async (dockerBake) => {
         const tmpDir = await makeTempDir();

@@ -2,6 +2,12 @@ import type { Config } from 'semantic-release';
 import { toList } from './utils/list.js';
 
 /**
+ * Values a JavaScript config file can leave in `dockerBake` to switch Docker
+ * Bake off.
+ */
+type NoBake = false | null | 0 | '';
+
+/**
  * Raw plugin configuration as provided by the user in their
  * semantic-release config file. All fields are optional and fall
  * back to sensible defaults when omitted.
@@ -24,12 +30,14 @@ export interface OciPluginConfig extends Config {
   readonly dockerNoCache?: boolean;
   readonly dockerBuildCacheFrom?: string | string[];
   readonly dockerTimeout?: number;
-  readonly dockerBake?: {
-    readonly file?: string;
-    readonly group?: string;
-    readonly target?: string;
-    readonly imageTarget?: string;
-  };
+  readonly dockerBake?:
+    | {
+        readonly file?: string;
+        readonly group?: string;
+        readonly target?: string;
+        readonly imageTarget?: string;
+      }
+    | NoBake;
 }
 
 /**

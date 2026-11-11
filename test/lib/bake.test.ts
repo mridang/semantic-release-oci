@@ -94,6 +94,7 @@ const BAKE: BakeOptions = {
   file: '/work/docker-bake.hcl',
   metadataFile: METADATA,
   imageTarget: 'image',
+  selector: '',
   tags: [],
   dryRun: false,
   buildArgs: [],

@@ -6,7 +6,7 @@ import type { ExecOptions, Runner } from '../../src/utils/exec.js';
  * the program name) and the options of each call, and returns its stdout.
  */
 export type DockerSpy = jest.Mock<
-  (args: readonly string[], options?: ExecOptions) => string
+  (args: readonly string[], options?: ExecOptions) => string | Promise<string>
 >;
 
 /**
