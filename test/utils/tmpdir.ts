@@ -13,7 +13,6 @@ process.on('exit', () => rmSync(root, { recursive: true, force: true }));
  * Create a temporary directory that {@link removeTempDirs} deletes. Register
  * `afterEach(removeTempDirs)` in the test file, so the directory is removed
  * even when an assertion fails.
- *
  * @returns The directory path.
  */
 export function makeTempDir(): string {

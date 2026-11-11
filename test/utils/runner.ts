@@ -11,7 +11,6 @@ export type DockerSpy = jest.Mock<
 
 /**
  * Create a spy for the docker binary that succeeds with empty output.
- *
  * @returns The spy.
  */
 export function dockerSpy(): DockerSpy {
@@ -22,8 +21,7 @@ export function dockerSpy(): DockerSpy {
 
 /**
  * Adapt a docker spy to the {@link Runner} a client takes.
- *
- * @param spy The spy that records the calls.
+ * @param spy - The spy that records the calls.
  * @returns A runner that forwards to it.
  */
 export function runnerOf(spy: DockerSpy): Runner {
@@ -33,8 +31,7 @@ export function runnerOf(spy: DockerSpy): Runner {
 /**
  * The error a docker command that ran and failed throws: an exit status and
  * what it wrote to stderr.
- *
- * @param stderr What the command wrote to stderr.
+ * @param stderr - What the command wrote to stderr.
  * @returns The error to throw from a spy.
  */
 export function failure(stderr: string): Error {

@@ -83,7 +83,7 @@ describe('secretsIn', () => {
 
     secretsIn(['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`], {});
 
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
   it('lists each value once', () => {

@@ -38,9 +38,8 @@ export interface DockerRunOptions {
 
 /**
  * Reads a text file, relative to the working directory.
- *
- * @param cwd  Directory relative paths are resolved against.
- * @param file Path of the file.
+ * @param cwd - Directory relative paths are resolved against.
+ * @param file - Path of the file.
  * @returns The contents, or undefined when the file cannot be read.
  */
 function readText(cwd: string, file: string): string | undefined {
@@ -69,8 +68,8 @@ class DockerCommandError extends SemanticReleaseError {
   readonly errno: string | undefined;
 
   /**
-   * @param message The scrubbed message.
-   * @param source  The error that was thrown by the runner.
+   * @param message - The scrubbed message.
+   * @param source - The error that was thrown by the runner.
    */
   constructor(message: string, source: unknown) {
     super(message, 'EDOCKER');
@@ -85,8 +84,7 @@ class DockerCommandError extends SemanticReleaseError {
  * and never by its message text, which holds the command line: the code and
  * signal when there are any, and what the command wrote to stderr. A value
  * that is not an error is described by its string form.
- *
- * @param error The value thrown by the runner.
+ * @param error - The value thrown by the runner.
  * @returns The lines of detail, which are not yet scrubbed.
  */
 function detailsOf(error: unknown): readonly string[] {
@@ -105,8 +103,7 @@ function detailsOf(error: unknown): readonly string[] {
  * shell, in the release's directory and environment; hides the secrets a
  * command carries from the logged line and from any error; and rebuilds a
  * failure from scrubbed parts only.
- *
- * @param options Directory, environment, timeout, logger and runner.
+ * @param options - Directory, environment, timeout, logger and runner.
  * @returns The function that runs a docker command.
  */
 export function dockerRun(options: DockerRunOptions): DockerRun {
@@ -116,7 +113,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
   const env = { ...process.env, ...options.env };
   return async (args, input) => {
     const nul = args.findIndex((arg) => arg.includes('\0'));
-    if (nul >= 0) {
+    if (nul !== -1) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
     }
     const secrets = secretsIn(args, env, readFile, input);
@@ -148,8 +145,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
 
 /**
  * Verifies the Docker CLI is installed and reachable.
- *
- * @param docker Runs docker commands.
+ * @param docker - Runs docker commands.
  * @throws SemanticReleaseError with code `ENOENT` when Docker is not
  *         installed; any other failure is rethrown with its detail.
  */

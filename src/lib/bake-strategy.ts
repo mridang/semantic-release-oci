@@ -25,10 +25,10 @@ export class BakeStrategy extends ImageStrategy {
   readonly isBuildx = true;
 
   /**
-   * @param config  Resolved plugin configuration.
-   * @param context Semantic-release context with cwd, env, and logger.
-   * @param bake    The resolved `dockerBake` settings.
-   * @param run     Runs the docker binary; only tests pass one.
+   * @param config - Resolved plugin configuration.
+   * @param context - Semantic-release context with cwd, env, and logger.
+   * @param bake - The resolved `dockerBake` settings.
+   * @param run - Runs the docker binary; only tests pass one.
    */
   constructor(
     config: OciConfig,
@@ -42,7 +42,6 @@ export class BakeStrategy extends ImageStrategy {
   /**
    * Verifies a `group` or `target` is configured and the bake file
    * exists.
-   *
    * @returns A log label naming the verified bake file.
    */
   verifyTarget(): string {
@@ -67,9 +66,8 @@ export class BakeStrategy extends ImageStrategy {
    * Runs `docker buildx bake`, injecting version tags and build args via
    * `--set`, and reads the resulting digest from a metadata file that is
    * always cleaned up afterwards.
-   *
-   * @param params Resolved per-build inputs.
-   * @returns      The captured digest hex and the rendered tags.
+   * @param params - Resolved per-build inputs.
+   * @returns The captured digest hex and the rendered tags.
    */
   async build(params: BuildParams): Promise<BuildResult> {
     const { config, context, bake, cwd } = this;

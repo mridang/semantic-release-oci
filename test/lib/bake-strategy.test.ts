@@ -105,7 +105,7 @@ describe('BakeStrategy', () => {
       expect(args).toContain('--metadata-file');
       const tagSet = args.find((a) => a.startsWith('image.tags='));
       expect(tagSet).toContain('my-app:1.2.3');
-      expect(args[args.length - 1]).toBe('release');
+      expect(args.at(-1)).toBe('release');
     });
 
     it('should emit one --set tags override per tag', async () => {
@@ -194,7 +194,7 @@ describe('BakeStrategy', () => {
       await strategy.build(baseParams);
 
       const args = execMock.mock.calls[0][0];
-      expect(args[args.length - 1]).toBe('image');
+      expect(args.at(-1)).toBe('image');
     });
 
     it('should capture the digest from the metadata file', async () => {

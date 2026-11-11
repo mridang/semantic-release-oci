@@ -11,15 +11,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 import { stepContext } from './utils/context.js';
 import { isRecord, stringAt } from '../src/utils/object.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __filename = import.meta.filename;
+const __dirname = import.meta.dirname;
 
 function requireDocker(): void {
   try {

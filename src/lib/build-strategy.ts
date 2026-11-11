@@ -21,7 +21,6 @@ export class BuildStrategy extends ImageStrategy {
 
   /**
    * Verifies the configured Dockerfile exists.
-   *
    * @returns A log label naming the verified Dockerfile.
    */
   verifyTarget(): string {
@@ -37,9 +36,8 @@ export class BuildStrategy extends ImageStrategy {
 
   /**
    * Builds the image and scrapes the digest from the build output.
-   *
-   * @param params Resolved per-build inputs.
-   * @returns      The captured digest hex and the rendered tags.
+   * @param params - Resolved per-build inputs.
+   * @returns The captured digest hex and the rendered tags.
    */
   async build(params: BuildParams): Promise<BuildResult> {
     const { config, cwd } = this;
@@ -72,8 +70,7 @@ export class BuildStrategy extends ImageStrategy {
 
   /**
    * The tags with the ones that contain the release version first.
-   *
-   * @param state The stored build state.
+   * @param state - The stored build state.
    * @returns The tags in push order.
    */
   private versionTagsFirst(state: BuildState): readonly string[] {
@@ -89,8 +86,7 @@ export class BuildStrategy extends ImageStrategy {
    * are pushed first and floating ones such as `latest` after them, so a
    * failed push can never leave a floating tag on a release that has no
    * version tag in the registry; the order of the rest is kept.
-   *
-   * @param state The stored build state.
+   * @param state - The stored build state.
    */
   async finalizePublish(state: BuildState): Promise<void> {
     const { config, context } = this;

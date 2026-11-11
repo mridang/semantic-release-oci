@@ -93,9 +93,9 @@ describe('BuildStrategy', () => {
       const args = execMock.mock.calls[0][0];
       expect(args[0]).toBe('build');
       expect(args).toContain('--quiet');
-      expect(args.some((a) => a === 'my-app:latest')).toBe(true);
-      expect(args.some((a) => a === 'my-app:1-latest')).toBe(true);
-      expect(args.some((a) => a === 'my-app:1.2.3')).toBe(true);
+      expect(args.includes('my-app:latest')).toBe(true);
+      expect(args.includes('my-app:1-latest')).toBe(true);
+      expect(args.includes('my-app:1.2.3')).toBe(true);
       expect(args.some((a) => a.startsWith('--network'))).toBe(false);
     });
 
@@ -200,7 +200,7 @@ describe('BuildStrategy', () => {
 
       const args = execMock.mock.calls[0][0];
       const tagArgs = args.filter((_a, i) => args[i - 1] === '--tag');
-      expect(tagArgs.every((t) => !t.match(/:[a-f0-9]{16,}$/))).toBe(true);
+      expect(tagArgs.every((t) => !/:[a-f0-9]{16,}$/.test(t))).toBe(true);
     });
 
     it('should include --pull in buildx mode', async () => {
@@ -491,7 +491,7 @@ describe('BuildStrategy', () => {
       });
 
       const args = execMock.mock.calls[0][0];
-      expect(args.some((a) => a === ':latest')).toBe(true);
+      expect(args.includes(':latest')).toBe(true);
     });
 
     it('should extract the SHA from build output', async () => {

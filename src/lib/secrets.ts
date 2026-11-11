@@ -80,9 +80,8 @@ interface Assignment {
  * argument after `--build-arg` or `--set`, or the joined form
  * `--build-arg=KEY=value`. A `--set` only counts when it sets a build
  * argument (`*.args.KEY=value`). The value starts at the first `=`.
- *
- * @param arg      The argument.
- * @param previous The argument before it.
+ * @param arg - The argument.
+ * @param previous - The argument before it.
  * @returns The assignment, or undefined when the argument is not one.
  */
 function assignmentOf(
@@ -93,8 +92,8 @@ function assignmentOf(
   const flag = joined?.[1] ?? previous;
   const payload = joined?.[2] ?? arg;
   const split = payload.indexOf('=');
-  const name = split < 0 ? payload : payload.slice(0, split);
-  const value = split < 0 ? undefined : payload.slice(split + 1);
+  const name = split === -1 ? payload : payload.slice(0, split);
+  const value = split === -1 ? undefined : payload.slice(split + 1);
   if (flag === '--build-arg') {
     return { payload, key: name, value };
   }
@@ -108,13 +107,12 @@ function assignmentOf(
  * The password of a `user:password@host` cache reference in one piece of a
  * cache spec. The piece is cut at its last `@` first, so the pattern only
  * ever scans the text before it, once.
- *
- * @param piece One comma-separated piece of a cache spec.
+ * @param piece - One comma-separated piece of a cache spec.
  * @returns The password, or undefined when the piece has none.
  */
 function cachePassword(piece: string): string | undefined {
   const at = piece.lastIndexOf('@');
-  if (at < 0) {
+  if (at === -1) {
     return undefined;
   }
   return /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i.exec(
@@ -125,10 +123,9 @@ function cachePassword(piece: string): string | undefined {
 /**
  * Where a `--secret` mount gets its value: the environment variable named by
  * `env=` and the file named by `src=` or `source=`.
- *
- * @param spec     The `--secret` specification (`id=npm,env=TOKEN`).
- * @param env      The environment docker runs with.
- * @param readFile Reads a file, or returns undefined when it cannot.
+ * @param spec - The `--secret` specification (`id=npm,env=TOKEN`).
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The values the mount will carry.
  */
 function mountSecrets(
@@ -159,11 +156,10 @@ function mountSecrets(
  * `--auth-token=...`), the password of `user:password@host` in a cache spec,
  * the value of a flag that names a credential (`--auth-token`), and what a
  * `--secret` mount reads from the environment or a file.
- *
- * @param arg      The argument.
- * @param previous The argument before it.
- * @param env      The environment docker runs with.
- * @param readFile Reads a file, or returns undefined when it cannot.
+ * @param arg - The argument.
+ * @param previous - The argument before it.
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The credential values found.
  */
 function embeddedSecrets(
@@ -199,9 +195,8 @@ function embeddedSecrets(
  * way a credential would be, unless its name is a known-public release
  * variable or the value is a common word; a value docker takes from the
  * environment is looked up there first.
- *
- * @param assignment The build argument.
- * @param env        The environment docker runs with.
+ * @param assignment - The build argument.
+ * @param env - The environment docker runs with.
  * @returns The value and its length floor, or undefined when it is public.
  */
 function assignedSecret(
@@ -234,12 +229,11 @@ function assignedSecret(
  * flag values and cache specs, what `--secret` mounts read from the
  * environment or from files, and the text sent on stdin. Versions, tags and
  * digests are not build arguments and are never hidden.
- *
- * @param args     Docker arguments.
- * @param env      The environment docker runs with.
- * @param readFile Reads a file named by `--secret src=`, or returns undefined
- *                 when it cannot.
- * @param input    Text written to stdin, such as a registry password.
+ * @param args - Docker arguments.
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file named by `--secret src=`, or returns undefined
+ * when it cannot.
+ * @param input - Text written to stdin, such as a registry password.
  * @returns The distinct values worth hiding.
  */
 export function secretsIn(
@@ -270,8 +264,7 @@ export function secretsIn(
  * The texts to hide for a secret: the secret, each line of it (BuildKit
  * prefixes every line of output), and its base64 form. The URL-encoded and
  * JSON-escaped forms are added by {@link redactSecrets}.
- *
- * @param secret A secret value.
+ * @param secret - A secret value.
  * @returns The distinct texts to hide.
  */
 function formsOf(secret: string): readonly string[] {
@@ -287,9 +280,8 @@ function formsOf(secret: string): readonly string[] {
  * Replace every secret, in every form, in a text. This is best effort: a
  * secret that a build step transforms in another way (hashing, splitting
  * across lines) is not recognised.
- *
- * @param text    Text that may contain secrets, such as docker's stderr.
- * @param secrets Values to hide, as returned by {@link secretsIn}.
+ * @param text - Text that may contain secrets, such as docker's stderr.
+ * @param secrets - Values to hide, as returned by {@link secretsIn}.
  * @returns The text with every secret replaced.
  */
 export function scrub(text: string, secrets: readonly string[]): string {
@@ -300,8 +292,7 @@ export function scrub(text: string, secrets: readonly string[]): string {
  * The args with what is known by position to be sensitive masked, whatever
  * its length: the value of every build argument, and the user of a registry
  * login.
- *
- * @param args Docker arguments.
+ * @param args - Docker arguments.
  * @returns The arguments, safe to join into a log line.
  */
 export function maskArgs(args: readonly string[]): readonly string[] {

@@ -53,8 +53,7 @@ export interface BuildOptions {
 /**
  * The name of a user-supplied flag: kept as it is when it starts with a dash,
  * otherwise `--kebab-case` (a single letter becomes `-x`).
- *
- * @param key The name from the configuration.
+ * @param key - The name from the configuration.
  * @returns The flag.
  */
 function flagName(key: string): string {
@@ -62,14 +61,13 @@ function flagName(key: string): string {
     return key;
   }
   const dashes = key.length === 1 ? '-' : '--';
-  return `${dashes}${key.toLowerCase().replace(/_/g, '-')}`;
+  return `${dashes}${key.toLowerCase().replaceAll('_', '-')}`;
 }
 
 /**
  * The arguments for user-supplied build flags. A `null` value emits the flag
  * alone and a list emits the flag once per value.
- *
- * @param flags Flag names mapped to a value, a list of values, or null.
+ * @param flags - Flag names mapped to a value, a list of values, or null.
  * @returns The arguments.
  */
 function flagArgs(
@@ -87,8 +85,7 @@ function flagArgs(
 
 /**
  * The arguments that select platforms and pushing, for a buildx build.
- *
- * @param options What to build and how.
+ * @param options - What to build and how.
  * @returns The arguments, none for a plain build.
  */
 function platformArgs(options: BuildOptions): readonly string[] {
@@ -101,8 +98,7 @@ function platformArgs(options: BuildOptions): readonly string[] {
 
 /**
  * The arguments of a build.
- *
- * @param options What to build and how.
+ * @param options - What to build and how.
  * @returns The arguments after `docker`.
  */
 function buildArgsOf(options: BuildOptions): readonly string[] {
@@ -136,11 +132,11 @@ function buildArgsOf(options: BuildOptions): readonly string[] {
  */
 export class Build {
   /**
-   * @param docker     Runs docker commands.
-   * @param repository Image repository path.
-   * @param id         Id the build was tagged with.
-   * @param digest     Digest hex of the image, or an empty string when it
-   *                   cannot be determined.
+   * @param docker - Runs docker commands.
+   * @param repository - Image repository path.
+   * @param id - Id the build was tagged with.
+   * @param digest - Digest hex of the image, or an empty string when it
+   * cannot be determined.
    */
   constructor(
     private readonly docker: DockerRun,
@@ -151,11 +147,10 @@ export class Build {
 
   /**
    * Builds an image.
-   *
-   * @param docker     Runs docker commands.
-   * @param repository Image repository path.
-   * @param id         Id the build is tagged with.
-   * @param options    What to build and how.
+   * @param docker - Runs docker commands.
+   * @param repository - Image repository path.
+   * @param id - Id the build is tagged with.
+   * @param options - What to build and how.
    * @returns The built image, with the digest scraped from the output.
    */
   static async run(
@@ -176,8 +171,7 @@ export class Build {
 
   /**
    * Adds a tag to the built image.
-   *
-   * @param tag The new tag.
+   * @param tag - The new tag.
    * @returns The image under that tag.
    */
   async tag(tag: string): Promise<Image> {

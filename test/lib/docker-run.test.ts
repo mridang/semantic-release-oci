@@ -190,7 +190,7 @@ describe('dockerRun', () => {
         `type=registry,ref=${'a'.repeat(200_000)}`,
       ]);
 
-      expect(performance.now() - started).toBeLessThan(2_000);
+      expect(performance.now() - started).toBeLessThan(2000);
     });
   });
 

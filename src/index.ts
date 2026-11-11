@@ -28,12 +28,11 @@ const published = new Set<string>();
  * the plugin entry (a hash of its whole configuration), the release version,
  * the directory and the repository, so two entries for the same image, two
  * releases, or two directories can never pick up each other's build.
- *
- * @param pluginConfig Raw plugin configuration of this entry.
- * @param context      Semantic-release context of the step.
- * @param cwd          Directory the release runs in.
- * @param repo         Full image repository path.
- * @returns            A key unique to that combination.
+ * @param pluginConfig - Raw plugin configuration of this entry.
+ * @param context - Semantic-release context of the step.
+ * @param cwd - Directory the release runs in.
+ * @param repo - Full image repository path.
+ * @returns A key unique to that combination.
  */
 function stateKey(
   pluginConfig: OciPluginConfig,
@@ -53,10 +52,9 @@ function stateKey(
  * back to the `package.json` name and scope. The image name is
  * `undefined` when neither config nor package.json provides one; the
  * repository path treats a missing name as empty.
- *
- * @param config  Resolved plugin configuration.
- * @param cwd     Directory the release runs in.
- * @returns       The resolved image name and repository path.
+ * @param config - Resolved plugin configuration.
+ * @param cwd - Directory the release runs in.
+ * @returns The resolved image name and repository path.
  */
 function resolveImage(
   config: OciConfig,
@@ -78,9 +76,8 @@ function resolveImage(
  * Verifies that the Docker image name is resolvable, the strategy's
  * required files exist, and (when enabled) performs Docker registry
  * login using configured credentials.
- *
- * @param pluginConfig Raw plugin configuration from semantic-release.
- * @param context      Semantic-release context with env and logger.
+ * @param pluginConfig - Raw plugin configuration from semantic-release.
+ * @param context - Semantic-release context with env and logger.
  */
 export async function verifyConditions(
   pluginConfig: OciPluginConfig,
@@ -110,9 +107,8 @@ export async function verifyConditions(
 /**
  * Builds the Docker image via the selected strategy and stores build
  * state in a module-level map for the subsequent publish step.
- *
- * @param pluginConfig Raw plugin configuration from semantic-release.
- * @param context      Semantic-release context with env and logger.
+ * @param pluginConfig - Raw plugin configuration from semantic-release.
+ * @param context - Semantic-release context with env and logger.
  */
 export async function prepare(
   pluginConfig: OciPluginConfig,
@@ -151,7 +147,7 @@ export async function prepare(
     buildId,
     isDryRun,
   });
-  const sha = sha256 ? sha256.substring(0, 12) : buildId;
+  const sha = sha256 ? sha256.slice(0, 12) : buildId;
 
   buildStates.set(key, {
     sha,
@@ -169,9 +165,8 @@ export async function prepare(
 /**
  * Finalizes publishing of the previously built image (strategy-specific
  * tag/push/cleanup) and sets GitHub Actions outputs.
- *
- * @param pluginConfig Raw plugin configuration from semantic-release.
- * @param context      Semantic-release context with env and logger.
+ * @param pluginConfig - Raw plugin configuration from semantic-release.
+ * @param context - Semantic-release context with env and logger.
  */
 export async function publish(
   pluginConfig: OciPluginConfig,

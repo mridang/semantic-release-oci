@@ -5,8 +5,8 @@ import type { DockerRun } from './docker-run.js';
  */
 export class Registry {
   /**
-   * @param docker Runs docker commands.
-   * @param host   Registry host, or undefined for Docker's default.
+   * @param docker - Runs docker commands.
+   * @param host - Registry host, or undefined for Docker's default.
    */
   constructor(
     private readonly docker: DockerRun,
@@ -16,9 +16,8 @@ export class Registry {
   /**
    * Logs in to the registry. The password goes over stdin, so it is never
    * part of a command line.
-   *
-   * @param user     Registry user.
-   * @param password Registry password or token.
+   * @param user - Registry user.
+   * @param password - Registry password or token.
    * @returns The registry, now logged in.
    */
   async login(user: string, password: string): Promise<Registry> {

@@ -5,8 +5,8 @@ import type { DockerRun } from './docker-run.js';
  */
 export class PushedImage {
   /**
-   * @param image  The image that was pushed.
-   * @param output What the push wrote, such as its progress and digest.
+   * @param image - The image that was pushed.
+   * @param output - What the push wrote, such as its progress and digest.
    */
   constructor(
     readonly image: Image,
@@ -19,9 +19,9 @@ export class PushedImage {
  */
 export class Image {
   /**
-   * @param docker     Runs docker commands.
-   * @param repository Image repository path, including registry and project.
-   * @param tag        Tag of the image.
+   * @param docker - Runs docker commands.
+   * @param repository - Image repository path, including registry and project.
+   * @param tag - Tag of the image.
    */
   constructor(
     private readonly docker: DockerRun,
@@ -31,7 +31,6 @@ export class Image {
 
   /**
    * The reference docker knows the image by.
-   *
    * @returns `repository:tag`.
    */
   get reference(): string {
@@ -40,7 +39,6 @@ export class Image {
 
   /**
    * Pushes the image to the registry its repository names.
-   *
    * @returns The pushed image, with what the push wrote.
    */
   async push(): Promise<PushedImage> {

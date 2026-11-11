@@ -9,9 +9,8 @@ const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
 
 /**
  * Splits an npm package name into its optional scope and bare name.
- *
- * @param pkgname Package name, optionally scoped (`@scope/name`).
- * @returns       The parsed `scope` and `name`, each `null` when absent.
+ * @param pkgname - Package name, optionally scoped (`@scope/name`).
+ * @returns The parsed `scope` and `name`, each `null` when absent.
  */
 export function parsePkgName(pkgname: string): {
   /** The scope without its `@`, or null. */
@@ -28,9 +27,8 @@ export function parsePkgName(pkgname: string): {
  * Reads `package.json` from the given directory, if present. A missing
  * or malformed file resolves to `null` rather than throwing, so callers
  * fall back to explicit config (e.g. `dockerImage`).
- *
- * @param cwd Directory to read `package.json` from.
- * @returns   The parsed package, or `null` when absent or unparseable.
+ * @param cwd - Directory to read `package.json` from.
+ * @returns The parsed package, or `null` when absent or unparseable.
  */
 export function readPkg(cwd: string): { readonly name?: string } | null {
   const pkgPath = path.join(cwd, 'package.json');
@@ -46,11 +44,10 @@ export function readPkg(cwd: string): { readonly name?: string } | null {
 /**
  * Joins the registry, project, and image name into a full repository
  * path, skipping any empty segments.
- *
- * @param registry Registry hostname, or `undefined`.
- * @param project  Project/organization segment, or `undefined`.
- * @param name     Image name.
- * @returns        The combined repository path.
+ * @param registry - Registry hostname, or `undefined`.
+ * @param project - Project/organization segment, or `undefined`.
+ * @param name - Image name.
+ * @returns The combined repository path.
  */
 export function buildImageRepo(
   registry: string | undefined,
