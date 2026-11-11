@@ -25,6 +25,7 @@ const MIN_DEFAULT_LENGTH = 6;
  * `VERSION` and `KEYBOARD` do not.
  */
 const SENSITIVE_KEY =
+  // eslint-disable-next-line sonarjs/regex-complexity -- long explicit keyword list kept readable; splitting the pattern would obscure it
   /(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?|api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)/i;
 
 /**
@@ -33,6 +34,7 @@ const SENSITIVE_KEY =
  * arguments that are not hidden from error text by default.
  */
 const PUBLIC_KEY =
+  // eslint-disable-next-line sonarjs/regex-complexity -- long explicit keyword list kept readable; splitting the pattern would obscure it
   /(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha|git-?head|git-?commit|commit|revision|build-?date|build-?time|channel)(?:[^a-z]|$)/i;
 
 /**
@@ -180,7 +182,7 @@ function embeddedSecrets(
   const cache =
     (previous !== undefined && CACHE_FLAG.test(previous)) ||
     /^--cache-(?:from|to)=/.test(arg);
-  const passwords = cache ? pieces.map(cachePassword) : [];
+  const passwords = cache ? pieces.map((piece) => cachePassword(piece)) : [];
   const flagValue =
     previous !== undefined && SENSITIVE_FLAG.test(previous) ? [arg] : [];
   const mount =
@@ -271,6 +273,7 @@ function formsOf(secret: string): readonly string[] {
   const parts = [secret, ...secret.split(/\r?\n/).map((line) => line.trim())];
   const forms = parts.flatMap((part) => {
     const base64 = Buffer.from(part).toString('base64');
+    // eslint-disable-next-line sonarjs/super-linear-regex -- anchored trailing padding strip on a short base64 string
     return [part, base64, base64.replace(/=+$/, '')];
   });
   return [...new Set(forms)].filter((form) => form.length >= MIN_SECRET_LENGTH);
@@ -285,7 +288,10 @@ function formsOf(secret: string): readonly string[] {
  * @returns The text with every secret replaced.
  */
 export function scrub(text: string, secrets: readonly string[]): string {
-  return redactSecrets(text, secrets.flatMap(formsOf));
+  return redactSecrets(
+    text,
+    secrets.flatMap((secret) => formsOf(secret)),
+  );
 }
 
 /**

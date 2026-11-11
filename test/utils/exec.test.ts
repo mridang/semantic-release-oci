@@ -22,8 +22,8 @@ const { ExecError, run } = await import('../../src/utils/exec.js');
  * Make the next command finish by calling its callback.
  */
 function finishWith(error: unknown, stdout: unknown, stderr: unknown): void {
-  execFileMock.mockImplementation((_file, _args, _options, callback) => {
-    callback(error, stdout, stderr);
+  execFileMock.mockImplementation((_file, _args, _options, done) => {
+    done(error, stdout, stderr);
     return { stdin };
   });
 }
@@ -32,10 +32,12 @@ function finishWith(error: unknown, stdout: unknown, stderr: unknown): void {
  * The error a failed command rejects with.
  */
 async function rejection(promise: Promise<string>): Promise<unknown> {
-  return promise.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
+  try {
+    await promise;
+    return undefined;
+  } catch (error: unknown) {
+    return error;
+  }
 }
 
 beforeEach(() => {
@@ -127,9 +129,9 @@ describe('run', () => {
   it('takes a numeric code as the exit status', async () => {
     finishWith(Object.assign(new Error('failed'), { code: 2 }), '', '');
 
-    expect(await rejection(run('docker', ['pull']))).toEqual(
-      expect.objectContaining({ status: 2, code: undefined }),
-    );
+    const error = await rejection(run('docker', ['pull']));
+    expect(error).toEqual(expect.objectContaining({ status: 2 }));
+    expect(error).toHaveProperty('code', undefined);
   });
 
   it('reports a command killed after the timeout as ETIMEDOUT', async () => {
@@ -154,9 +156,9 @@ describe('run', () => {
       '',
     );
 
-    expect(await rejection(run('docker', ['build']))).toEqual(
-      expect.objectContaining({ code: undefined, signal: 'SIGKILL' }),
-    );
+    const error = await rejection(run('docker', ['build']));
+    expect(error).toEqual(expect.objectContaining({ signal: 'SIGKILL' }));
+    expect(error).toHaveProperty('code', undefined);
   });
 
   it('redacts credentials in the message of the error', async () => {

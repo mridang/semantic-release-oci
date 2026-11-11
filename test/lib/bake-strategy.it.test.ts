@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { execSync } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams } from '../../src/lib/types.js';
@@ -16,6 +17,7 @@ import { stepContext } from '../utils/context.js';
  */
 const dockerAvailable: boolean = (() => {
   try {
+    // eslint-disable-next-line n/no-sync -- bootstrap probe: it decides at load time whether the suite is defined, so it must be synchronous
     execSync('docker buildx bake --help', { stdio: 'ignore' });
     return true;
   } catch {
@@ -23,27 +25,32 @@ const dockerAvailable: boolean = (() => {
   }
 })();
 
-function imageExists(ref: string): boolean {
+const execAsync = promisify(exec);
+
+async function imageExists(ref: string): Promise<boolean> {
   try {
-    execSync(`docker image inspect ${ref}`, { stdio: 'ignore' });
+    await execAsync(`docker image inspect ${ref}`);
     return true;
   } catch {
     return false;
   }
 }
 
-function removeImage(ref: string): void {
+async function removeImage(ref: string): Promise<void> {
   try {
-    execSync(`docker image rm -f ${ref}`, { stdio: 'ignore' });
+    await execAsync(`docker image rm -f ${ref}`);
   } catch {
     /* image may not exist; nothing to clean up */
   }
 }
 
-function makeProject(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oci-bake-it-'));
-  fs.writeFileSync(path.join(dir, 'Dockerfile'), 'FROM busybox:latest\n');
-  fs.writeFileSync(
+async function makeProject(): Promise<string> {
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'oci-bake-it-'));
+  await fs.promises.writeFile(
+    path.join(dir, 'Dockerfile'),
+    'FROM busybox:latest\n',
+  );
+  await fs.promises.writeFile(
     path.join(dir, 'docker-bake.hcl'),
     [
       'target "image" {',
@@ -85,17 +92,17 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
   const repo = `oci-bake-it-${process.pid}`;
   let projectDir = '';
 
-  afterEach(() => {
-    removeImage(`${repo}:1.2.3`);
-    removeImage(`${repo}:latest`);
+  afterEach(async () => {
+    await removeImage(`${repo}:1.2.3`);
+    await removeImage(`${repo}:latest`);
     if (projectDir) {
-      fs.rmSync(projectDir, { recursive: true, force: true });
+      await fs.promises.rm(projectDir, { recursive: true, force: true });
       projectDir = '';
     }
   });
 
   it('builds the image, applies every tag, and captures a real digest', async () => {
-    projectDir = makeProject();
+    projectDir = await makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
@@ -111,12 +118,12 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
 
     expect(result.tags).toEqual(['1.2.3', 'latest']);
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(imageExists(`${repo}:1.2.3`)).toBe(true);
-    expect(imageExists(`${repo}:latest`)).toBe(true);
+    expect(await imageExists(`${repo}:1.2.3`)).toBe(true);
+    expect(await imageExists(`${repo}:latest`)).toBe(true);
   }, 180_000);
 
   it('validates without producing an image in dry-run mode', async () => {
-    projectDir = makeProject();
+    projectDir = await makeProject();
     const strategy = makeStrategy(projectDir, {
       target: 'image',
       imageTarget: 'image',
@@ -131,6 +138,6 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     } satisfies BuildParams);
 
     expect(result.tags).toEqual(['1.2.3']);
-    expect(imageExists(`${repo}:1.2.3`)).toBe(false);
+    expect(await imageExists(`${repo}:1.2.3`)).toBe(false);
   }, 180_000);
 });

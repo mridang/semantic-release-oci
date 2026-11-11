@@ -45,14 +45,14 @@ export class BakeStrategy extends ImageStrategy {
    * @returns A log label naming the verified bake file.
    */
   verifyTarget(): string {
-    const { bake } = this;
+    const { bake, cwd } = this;
     if (!bake.group && !bake.target) {
       throw new SemanticReleaseError(
         'dockerBake requires either "group" or "target" to be set.',
         'EINVAL',
       );
     }
-    const bakeFile = path.resolve(this.cwd, bake.file);
+    const bakeFile = path.resolve(cwd, bake.file);
     if (!fs.existsSync(bakeFile)) {
       throw new SemanticReleaseError(
         `Bake file not found at ${bakeFile}`,
@@ -70,7 +70,7 @@ export class BakeStrategy extends ImageStrategy {
    * @returns The captured digest hex and the rendered tags.
    */
   async build(params: BuildParams): Promise<BuildResult> {
-    const { config, context, bake, cwd } = this;
+    const { config, context, bake, cwd, docker } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
@@ -85,7 +85,7 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const baked = await new Bake(this.docker, {
+    const baked = await new Bake(docker, {
       file: path.resolve(cwd, bake.file),
       metadataFile,
       imageTarget: bake.imageTarget,

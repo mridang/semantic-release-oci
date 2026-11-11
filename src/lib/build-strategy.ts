@@ -40,12 +40,12 @@ export class BuildStrategy extends ImageStrategy {
    * @returns The captured digest hex and the rendered tags.
    */
   async build(params: BuildParams): Promise<BuildResult> {
-    const { config, cwd } = this;
+    const { config, cwd, docker } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const { isBuildx } = this;
 
-    const built = await Build.run(this.docker, repo, buildId, {
+    const built = await Build.run(docker, repo, buildId, {
       buildx: isBuildx,
       network: config.getDockerNetwork(),
       buildTag: isBuildx ? undefined : `${repo}:${buildId}`,
@@ -89,13 +89,8 @@ export class BuildStrategy extends ImageStrategy {
    * @param state - The stored build state.
    */
   async finalizePublish(state: BuildState): Promise<void> {
-    const { config, context } = this;
-    const built = new Build(
-      this.docker,
-      state.repo,
-      state.buildId,
-      state.sha256,
-    );
+    const { config, context, docker } = this;
+    const built = new Build(docker, state.repo, state.buildId, state.sha256);
 
     if (!state.isBuildx && config.isPublishEnabled()) {
       for (const tag of this.versionTagsFirst(state)) {

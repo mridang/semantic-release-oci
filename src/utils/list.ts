@@ -6,6 +6,7 @@
  */
 export function toList(value: string | readonly string[]): readonly string[] {
   return typeof value === 'string'
-    ? value.split(/\s*,\s*/).filter(Boolean)
+    ? // eslint-disable-next-line sonarjs/super-linear-regex -- the input is a short configuration string, so the whitespace runs are bounded
+      value.split(/\s*,\s*/).filter(Boolean)
     : [...value];
 }

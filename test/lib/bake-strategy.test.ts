@@ -11,9 +11,9 @@ import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
 
 const execMock = dockerSpy();
 
-function writeBakeFile(dir: string): string {
+async function writeBakeFile(dir: string): Promise<string> {
   const file = path.join(dir, 'docker-bake.hcl');
-  fs.writeFileSync(file, 'group "release" {}');
+  await fs.promises.writeFile(file, 'group "release" {}');
   return file;
 }
 
@@ -58,7 +58,7 @@ describe('BakeStrategy', () => {
   describe('verifyTarget', () => {
     it('should return a label for a valid bake file', async () => {
       const tmpDir = makeTempDir();
-      const file = writeBakeFile(tmpDir);
+      const file = await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });
@@ -68,7 +68,7 @@ describe('BakeStrategy', () => {
 
     it('should throw EINVAL when neither group nor target is set', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerBake: {} });
 
       expect(() => strategy.verifyTarget()).toThrow(
@@ -91,7 +91,7 @@ describe('BakeStrategy', () => {
   describe('build', () => {
     it('should drive buildx bake with file, metadata-file, and selector', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
@@ -110,7 +110,7 @@ describe('BakeStrategy', () => {
 
     it('should emit one --set tags override per tag', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
@@ -130,7 +130,7 @@ describe('BakeStrategy', () => {
 
     it('should scope tags to the wildcard target by default', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });
@@ -144,7 +144,7 @@ describe('BakeStrategy', () => {
 
     it('should use cacheonly output and no tags in dry-run mode', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
       });
@@ -158,7 +158,7 @@ describe('BakeStrategy', () => {
 
     it('should forward dockerArgs as bake --set args', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
         dockerArgs: { VERSION: '{{version}}' },
@@ -172,7 +172,7 @@ describe('BakeStrategy', () => {
 
     it('should skip boolean dockerArgs', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
         dockerArgs: { FROM_ENV: true },
@@ -186,7 +186,7 @@ describe('BakeStrategy', () => {
 
     it('should prefer target over group as the selector', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', target: 'image' },
       });
@@ -199,9 +199,10 @@ describe('BakeStrategy', () => {
 
     it('should capture the digest from the metadata file', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
+        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
         fs.writeFileSync(
           args[idx + 1],
           JSON.stringify({
@@ -222,11 +223,12 @@ describe('BakeStrategy', () => {
 
     it('should remove the metadata file after the build', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       let metadataPath = '';
       execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
+        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
         fs.writeFileSync(
           metadataPath,
           JSON.stringify({
@@ -242,16 +244,19 @@ describe('BakeStrategy', () => {
       await strategy.build(baseParams);
 
       expect(metadataPath).not.toBe('');
-      expect(fs.existsSync(metadataPath)).toBe(false);
+      await expect(fs.promises.access(metadataPath)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     });
 
     it('should remove the metadata file even when the build fails', async () => {
       const tmpDir = makeTempDir();
-      writeBakeFile(tmpDir);
+      await writeBakeFile(tmpDir);
       let metadataPath = '';
       execMock.mockImplementation((args: readonly string[]): string => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
+        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
         fs.writeFileSync(metadataPath, '{}');
         throw failure('build failed');
       });
@@ -261,7 +266,9 @@ describe('BakeStrategy', () => {
 
       await expect(strategy.build(baseParams)).rejects.toThrow('build failed');
       expect(metadataPath).not.toBe('');
-      expect(fs.existsSync(metadataPath)).toBe(false);
+      await expect(fs.promises.access(metadataPath)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
     });
   });
 

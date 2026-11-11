@@ -24,9 +24,9 @@ describe('parsePkgName', () => {
 });
 
 describe('readPkg', () => {
-  it('should read and parse package.json from the directory', () => {
+  it('should read and parse package.json from the directory', async () => {
     const tmpDir = makeTempDir();
-    fs.writeFileSync(
+    await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       JSON.stringify({ name: 'my-app' }),
     );
@@ -40,23 +40,32 @@ describe('readPkg', () => {
     expect(readPkg(tmpDir)).toBeNull();
   });
 
-  it('should return null when package.json is not an object', () => {
+  it('should return null when package.json is not an object', async () => {
     const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '"just a string"');
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '"just a string"',
+    );
 
     expect(readPkg(tmpDir)).toBeNull();
   });
 
-  it('should ignore a name that is not a string', () => {
+  it('should ignore a name that is not a string', async () => {
     const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ "name": 7 }');
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '{ "name": 7 }',
+    );
 
     expect(readPkg(tmpDir)?.name).toBeUndefined();
   });
 
-  it('should return null when package.json is malformed', () => {
+  it('should return null when package.json is malformed', async () => {
     const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ not valid json');
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '{ not valid json',
+    );
 
     expect(readPkg(tmpDir)).toBeNull();
   });

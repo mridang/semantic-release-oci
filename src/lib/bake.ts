@@ -11,15 +11,17 @@ import type { DockerRun } from './docker-run.js';
  * @param imageTarget - Target whose digest is preferred, or `"*"`.
  * @returns The image digest hex, or an empty string when unavailable.
  */
-export function parseBakeDigest(
+export async function parseBakeDigest(
   metadataPath: string,
   imageTarget: string,
-): string {
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
+): Promise<string> {
+  if (!metadataPath) {
     return '';
   }
   try {
-    const meta: unknown = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    const meta: unknown = JSON.parse(
+      await fs.promises.readFile(metadataPath, 'utf8'),
+    );
     if (!isRecord(meta)) {
       return '';
     }
@@ -122,10 +124,10 @@ export class Bake {
         ...(options.selector ? [options.selector] : []),
       ]);
       return new BakedImages(
-        parseBakeDigest(options.metadataFile, options.imageTarget),
+        await parseBakeDigest(options.metadataFile, options.imageTarget),
       );
     } finally {
-      fs.rmSync(options.metadataFile, { force: true });
+      await fs.promises.rm(options.metadataFile, { force: true });
     }
   }
 }

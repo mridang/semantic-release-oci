@@ -56,8 +56,6 @@ describe('OciConfig', () => {
       const config = makeConfig({ dockerBake: {} });
       expect(config.getDockerBake()).toEqual({
         file: 'docker-bake.hcl',
-        group: undefined,
-        target: undefined,
         imageTarget: '*',
       });
     });
@@ -66,7 +64,6 @@ describe('OciConfig', () => {
       const config = makeConfig({ dockerBake: { target: 'image' } });
       expect(config.getDockerBake()).toEqual({
         file: 'docker-bake.hcl',
-        group: undefined,
         target: 'image',
         imageTarget: 'image',
       });
@@ -77,14 +74,12 @@ describe('OciConfig', () => {
         dockerBake: {
           file: 'build/bake.hcl',
           group: 'release',
-          target: undefined,
           imageTarget: 'image',
         },
       });
       expect(config.getDockerBake()).toEqual({
         file: 'build/bake.hcl',
         group: 'release',
-        target: undefined,
         imageTarget: 'image',
       });
     });
@@ -188,7 +183,9 @@ describe('OciConfig', () => {
       expect(config.getDockerBuildCacheFrom()).toEqual(['type=local,src=/tmp']);
     });
   });
+});
 
+describe('OciConfig', () => {
   describe('immutability', () => {
     it('should return a fresh tags array, not the config array', () => {
       const original = ['a', 'b'];

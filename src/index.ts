@@ -123,7 +123,7 @@ export async function prepare(
   published.delete(key);
   const isDryRun = context.options.dryRun === true;
 
-  const { nextRelease } = context;
+  const { nextRelease, logger } = context;
   const [major, minor = '', patch = ''] = nextRelease.version.split('.');
   const vars = {
     version: nextRelease.version,
@@ -159,7 +159,7 @@ export async function prepare(
     isBuildx: strategy.isBuildx,
   });
 
-  context.logger.log(`Docker image built: ${repo}:${buildId} (sha: ${sha})`);
+  logger.log(`Docker image built: ${repo}:${buildId} (sha: ${sha})`);
 }
 
 /**

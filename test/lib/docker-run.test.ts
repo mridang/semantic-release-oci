@@ -45,6 +45,7 @@ beforeEach(() => {
   spy.mockReturnValue('');
 });
 
+// eslint-disable-next-line sonarjs/max-lines-per-function -- splitting this describe would re-indent every test in it
 describe('dockerRun', () => {
   describe('running docker', () => {
     it('runs docker with the args as an argv array and returns stdout', async () => {
@@ -223,6 +224,7 @@ describe('dockerRun', () => {
     });
   });
 
+  // eslint-disable-next-line sonarjs/max-lines-per-function -- splitting this describe would re-indent every test in it
   describe('hiding secrets in errors', () => {
     it('scrubs a secret that docker echoes on stderr', async () => {
       const { docker } = setup();
@@ -264,7 +266,10 @@ describe('dockerRun', () => {
 
     it('reads --secret files relative to the working directory by default', async () => {
       const dir = makeTempDir();
-      fs.writeFileSync(path.join(dir, 'tok.txt'), 'FileSecretVal888');
+      await fs.promises.writeFile(
+        path.join(dir, 'tok.txt'),
+        'FileSecretVal888',
+      );
       const docker = dockerRun({
         cwd: dir,
         env: { GITHUB_ACTIONS: 'false' },
