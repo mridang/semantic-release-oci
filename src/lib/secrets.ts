@@ -122,6 +122,11 @@ function cachePassword(piece: string): string | undefined {
   )?.[1];
 }
 
+/** Reads a file, or gives undefined when it cannot be read. */
+export type FileReader = (
+  path: string,
+) => Promise<string | undefined> | string | undefined;
+
 /**
  * Where a `--secret` mount gets its value: the environment variable named by
  * `env=` and the file named by `src=` or `source=`.
@@ -133,23 +138,26 @@ function cachePassword(piece: string): string | undefined {
 function mountSecrets(
   spec: string,
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined,
-): readonly (string | undefined)[] {
-  return spec.split(',').map((piece) => {
-    const at = piece.indexOf('=');
-    const name = piece.slice(0, at);
-    const value = piece.slice(at + 1);
-    if (at < 0) {
+  readFile: FileReader,
+): Promise<readonly (string | undefined)[]> {
+  return Promise.all(
+    spec.split(',').map(async (piece) => {
+      const at = piece.indexOf('=');
+      const name = piece.slice(0, at);
+      const value = piece.slice(at + 1);
+      if (at < 0) {
+        return undefined;
+      }
+      if (name === 'env') {
+        return Object.hasOwn(env, value) ? env[value] : undefined;
+      }
+      if (name === 'src' || name === 'source') {
+        const text = await readFile(value);
+        return text?.trim();
+      }
       return undefined;
-    }
-    if (name === 'env') {
-      return Object.hasOwn(env, value) ? env[value] : undefined;
-    }
-    if (name === 'src' || name === 'source') {
-      return readFile(value)?.trim();
-    }
-    return undefined;
-  });
+    }),
+  );
 }
 
 /**
@@ -164,12 +172,12 @@ function mountSecrets(
  * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The credential values found.
  */
-function embeddedSecrets(
+async function embeddedSecrets(
   arg: string,
   previous: string | undefined,
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined,
-): readonly (string | undefined)[] {
+  readFile: FileReader,
+): Promise<readonly (string | undefined)[]> {
   const pieces = arg.split(',');
   const pairs = pieces.map((piece) => {
     const at = piece.indexOf('=');
@@ -187,7 +195,8 @@ function embeddedSecrets(
     previous !== undefined && SENSITIVE_FLAG.test(previous) ? [arg] : [];
   const mount =
     previous === '--secret' ? arg : /^--secret=(.*)$/.exec(arg)?.[1];
-  const mounted = mount === undefined ? [] : mountSecrets(mount, env, readFile);
+  const mounted =
+    mount === undefined ? [] : await mountSecrets(mount, env, readFile);
   return [...pairs, ...passwords, ...flagValue, ...mounted];
 }
 
@@ -238,22 +247,25 @@ function assignedSecret(
  * @param input - Text written to stdin, such as a registry password.
  * @returns The distinct values worth hiding.
  */
-export function secretsIn(
+export async function secretsIn(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined = () => undefined,
+  readFile: FileReader = () => undefined,
   input?: string,
-): readonly string[] {
-  const found = args.flatMap((arg, index) => {
-    const previous = args[index - 1];
-    const assignment = assignmentOf(arg, previous);
-    const assigned = assignment ? assignedSecret(assignment, env) : undefined;
-    const explicit = embeddedSecrets(arg, previous, env, readFile).flatMap(
-      (value) =>
+): Promise<readonly string[]> {
+  const scanned = await Promise.all(
+    args.map(async (arg, index) => {
+      const previous = args[index - 1];
+      const assignment = assignmentOf(arg, previous);
+      const assigned = assignment ? assignedSecret(assignment, env) : undefined;
+      const embedded = await embeddedSecrets(arg, previous, env, readFile);
+      const explicit = embedded.flatMap((value) =>
         value === undefined ? [] : [{ value, floor: MIN_SECRET_LENGTH }],
-    );
-    return assigned ? [assigned, ...explicit] : explicit;
-  });
+      );
+      return assigned ? [assigned, ...explicit] : explicit;
+    }),
+  );
+  const found = scanned.flat();
   const sent =
     input === undefined ? [] : [{ value: input, floor: MIN_SECRET_LENGTH }];
   const values = [...found, ...sent]
@@ -273,8 +285,8 @@ function formsOf(secret: string): readonly string[] {
   const parts = [secret, ...secret.split(/\r?\n/).map((line) => line.trim())];
   const forms = parts.flatMap((part) => {
     const base64 = Buffer.from(part).toString('base64');
-    // eslint-disable-next-line sonarjs/super-linear-regex -- anchored trailing padding strip on a short base64 string
-    return [part, base64, base64.replace(/=+$/, '')];
+
+    return [part, base64, base64.split('=', 1)[0] ?? ''];
   });
   return [...new Set(forms)].filter((form) => form.length >= MIN_SECRET_LENGTH);
 }

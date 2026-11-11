@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readFile as readTextFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
@@ -6,7 +6,7 @@ import type { VerifyConditionsContext } from 'semantic-release';
 import { codeOf, signalOf, statusOf } from '../utils/error.js';
 import { run as defaultRun, type Runner } from '../utils/exec.js';
 import { isRecord, stringAt } from '../utils/object.js';
-import { maskArgs, scrub, secretsIn } from './secrets.js';
+import { maskArgs, scrub, secretsIn, type FileReader } from './secrets.js';
 
 /**
  * Runs one docker command and returns what it wrote to stdout. Every noun
@@ -33,7 +33,7 @@ export interface DockerRunOptions {
   /** Runs the program; only tests pass one. */
   readonly run?: Runner;
   /** Reads a file named by `--secret src=`; only tests pass one. */
-  readonly readFile?: (file: string) => string | undefined;
+  readonly readFile?: FileReader;
 }
 
 /**
@@ -42,10 +42,12 @@ export interface DockerRunOptions {
  * @param file - Path of the file.
  * @returns The contents, or undefined when the file cannot be read.
  */
-function readText(cwd: string, file: string): string | undefined {
+async function readText(
+  cwd: string,
+  file: string,
+): Promise<string | undefined> {
   try {
-    // eslint-disable-next-line n/no-sync -- secretsIn takes a synchronous reader and runs inside the synchronous argument scan, so the file has to be read synchronously
-    return fs.readFileSync(path.resolve(cwd, file), 'utf8');
+    return await readTextFile(path.resolve(cwd, file), 'utf8');
   } catch {
     return undefined;
   }
@@ -72,7 +74,7 @@ class DockerCommandError extends SemanticReleaseError {
    * @param message - The scrubbed message.
    * @param source - The error that was thrown by the runner.
    */
-  // eslint-disable-next-line unicorn/custom-error-definition -- the base class sets name to SemanticReleaseError, which semantic-release prints, so it keeps that name
+  // eslint-disable-next-line unicorn/custom-error-definition -- the rule requires name = 'DockerCommandError', but error.name must stay the 'SemanticReleaseError' its base class sets: docker-run.test.ts pins it and renaming it would change the error's observable shape
   constructor(message: string, source: unknown) {
     super(message, 'EDOCKER');
     this.status = statusOf(source);
@@ -118,7 +120,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     if (nul !== -1) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
     }
-    const secrets = secretsIn(args, env, readFile, input);
+    const secrets = await secretsIn(args, env, readFile, input);
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env['GITHUB_ACTIONS'] === 'true') {
