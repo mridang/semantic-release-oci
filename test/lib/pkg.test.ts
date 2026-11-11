@@ -24,41 +24,52 @@ describe('parsePkgName', () => {
 });
 
 describe('readPkg', () => {
-  it('should read and parse package.json from the directory', () => {
-    const tmpDir = makeTempDir();
-    fs.writeFileSync(
+  it('should read and parse package.json from the directory', async () => {
+    const tmpDir = await makeTempDir();
+    await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       JSON.stringify({ name: 'my-app' }),
     );
 
-    expect(readPkg(tmpDir)).toEqual({ name: 'my-app' });
+    expect(await readPkg(tmpDir)).toEqual({ name: 'my-app' });
   });
 
-  it('should return null when package.json is absent', () => {
-    const tmpDir = makeTempDir();
+  it('should return null when package.json is absent', async () => {
+    const tmpDir = await makeTempDir();
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 
-  it('should return null when package.json is not an object', () => {
-    const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '"just a string"');
+  it('should return null when package.json is not an object', async () => {
+    const tmpDir = await makeTempDir();
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '"just a string"',
+    );
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 
-  it('should ignore a name that is not a string', () => {
-    const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ "name": 7 }');
+  it('should ignore a name that is not a string', async () => {
+    const tmpDir = await makeTempDir();
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '{ "name": 7 }',
+    );
 
-    expect(readPkg(tmpDir)?.name).toBeUndefined();
+    const pkg = await readPkg(tmpDir);
+
+    expect(pkg?.name).toBeUndefined();
   });
 
-  it('should return null when package.json is malformed', () => {
-    const tmpDir = makeTempDir();
-    fs.writeFileSync(path.join(tmpDir, 'package.json'), '{ not valid json');
+  it('should return null when package.json is malformed', async () => {
+    const tmpDir = await makeTempDir();
+    await fs.promises.writeFile(
+      path.join(tmpDir, 'package.json'),
+      '{ not valid json',
+    );
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 });
 

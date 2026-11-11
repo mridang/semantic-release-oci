@@ -11,6 +11,7 @@ export interface BuildState {
   readonly buildId: string;
   /** The rendered tags. */
   readonly tags: readonly string[];
+
   /**
    * The release version, used to push the version tag before the floating ones.
    */

@@ -8,11 +8,10 @@ import { ImageStrategy } from './image-strategy.js';
 /**
  * Selects the build strategy for the given configuration: bake mode when
  * `dockerBake` is set, otherwise the standard `docker build` strategy.
- *
- * @param config  Resolved plugin configuration.
- * @param context Semantic-release context.
- * @param run     Runs the docker binary; only tests pass one.
- * @returns       The chosen {@link ImageStrategy}.
+ * @param config - Resolved plugin configuration.
+ * @param context - Semantic-release context.
+ * @param run - Runs the docker binary; only tests pass one.
+ * @returns The chosen {@link ImageStrategy}.
  */
 export function selectStrategy(
   config: OciConfig,

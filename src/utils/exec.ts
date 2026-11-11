@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { codeOf, messageOf, signalOf, statusOf } from './error.js';
 import { isRecord } from './object.js';
 import { redactCredentials } from './redact.js';
@@ -57,8 +58,8 @@ export class ExecError extends Error {
   readonly stderr: string;
 
   /**
-   * @param message Description of the failure, already free of credentials.
-   * @param details The code, exit status, signal and captured output.
+   * @param message - Description of the failure, already free of credentials.
+   * @param details - The code, exit status, signal and captured output.
    */
   constructor(
     message: string,
@@ -80,59 +81,65 @@ export class ExecError extends Error {
   }
 }
 
+const execFileAsync = promisify(execFile);
+
+/**
+ * Turn the error a failed command rejects with into an `ExecError`. The
+ * promisified `execFile` rejects with an `Error` that carries the exit
+ * status or system code in `code`, plus `signal`, `killed`, `stdout` and
+ * `stderr`.
+ * @param error - What the command rejected with.
+ * @param options - The options the command ran with.
+ * @returns The credential-safe error.
+ */
+function toExecError(error: unknown, options: ExecOptions): ExecError {
+  const text = (name: 'stdout' | 'stderr'): string => {
+    const value = isRecord(error) ? error[name] : undefined;
+    return redactCredentials(typeof value === 'string' ? value : '');
+  };
+  const timedOut =
+    isRecord(error) && error.killed === true && options.timeout !== undefined;
+  return new ExecError(redactCredentials(messageOf(error)), {
+    code: timedOut ? 'ETIMEDOUT' : codeOf(error),
+    status:
+      statusOf(error) ??
+      (isRecord(error) && typeof error.code === 'number'
+        ? error.code
+        : undefined),
+    signal: signalOf(error),
+    stdout: text('stdout'),
+    stderr: text('stderr'),
+  });
+}
+
 /**
  * Run a program without a shell. Arguments are passed as an array, so nothing
  * in them is interpreted; the environment is the current one plus
  * `options.env`. The standard input is always closed, after `options.input`
  * has been written, so a command never waits for input.
- *
- * @param file Program to run.
- * @param args Its arguments.
- * @param options Working directory, extra environment, input, timeout and
- *   output limit.
+ * @param file - Program to run.
+ * @param args - Its arguments.
+ * @param options - Working directory, extra environment, input, timeout and
+ * output limit.
  * @returns The standard output as a string.
  * @throws ExecError when the program cannot be started, fails or times out;
  *   its message and output have credentials redacted.
  */
-export const run: Runner = (file, args, options = {}) =>
-  new Promise((resolve, reject) => {
-    const child = execFile(
-      file,
-      [...args],
-      {
-        cwd: options.cwd,
-        env: { ...process.env, ...options.env },
-        maxBuffer: options.maxBuffer ?? MAX_BUFFER,
-        timeout: options.timeout,
-        encoding: 'utf8',
-      },
-      (error, stdout, stderr) => {
-        if (error === null) {
-          resolve(stdout);
-          return;
-        }
-        const text = (value: unknown, fallback: string): string =>
-          redactCredentials(typeof value === 'string' ? value : fallback);
-        const timedOut =
-          isRecord(error) &&
-          error.killed === true &&
-          options.timeout !== undefined;
-        reject(
-          new ExecError(redactCredentials(messageOf(error)), {
-            code: timedOut ? 'ETIMEDOUT' : codeOf(error),
-            status:
-              statusOf(error) ??
-              (isRecord(error) && typeof error.code === 'number'
-                ? error.code
-                : undefined),
-            signal: signalOf(error),
-            stdout: text(stdout, ''),
-            stderr: text(stderr, ''),
-          }),
-        );
-      },
-    );
-    // The command may exit before it has read its input (EPIPE).
-    child.stdin?.on('error', () => undefined);
-    child.stdin?.end(options.input);
+export const run: Runner = async (file, args, options = {}) => {
+  const pending = execFileAsync(file, [...args], {
+    cwd: options.cwd,
+    env: { ...process.env, ...options.env },
+    maxBuffer: options.maxBuffer ?? MAX_BUFFER,
+    timeout: options.timeout,
+    encoding: 'utf8',
   });
+  // The command may exit before it has read its input (EPIPE).
+  pending.child.stdin?.on('error', () => undefined);
+  pending.child.stdin?.end(options.input);
+  try {
+    const { stdout } = await pending;
+    return stdout;
+  } catch (error: unknown) {
+    throw toExecError(error, options);
+  }
+};

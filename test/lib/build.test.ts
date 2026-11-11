@@ -5,10 +5,13 @@ import { dockerSpy, runnerOf } from '../utils/runner.js';
 
 const spy = dockerSpy();
 
+// Declared without a value, so it is undefined: the options leave these unset.
+let unset: string | undefined;
+
 const BUILD: BuildOptions = {
   buildx: false,
-  network: undefined,
-  buildTag: undefined,
+  network: unset,
+  buildTag: unset,
   tags: [],
   quiet: false,
   noCache: false,
@@ -46,7 +49,7 @@ describe('Build.run', () => {
       cacheFrom: ['type=local,src=/c'],
       buildArgs: [
         { key: 'VERSION', value: '1.2.3' },
-        { key: 'FROM_ENV', value: undefined },
+        { key: 'FROM_ENV', value: unset },
       ],
       flags: { target: 'prod', s: null, build_context: ['a=b', 'c=d'] },
     });
@@ -134,9 +137,9 @@ describe('Build.run', () => {
       '#8 exporting\n#8 writing image sha256:abc123def456 done\nnothing\n',
     );
 
-    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe(
-      'abc123def456',
-    );
+    const built = await Build.run(docker, 'app', 'id1', BUILD);
+
+    expect(built.digest).toBe('abc123def456');
   });
 
   it('takes the last digest when several lines name one', async () => {
@@ -144,15 +147,17 @@ describe('Build.run', () => {
       '#9 exporting manifest sha256:aaaa1111\n#9 writing image sha256:bbbb2222\n',
     );
 
-    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe(
-      'bbbb2222',
-    );
+    const built = await Build.run(docker, 'app', 'id1', BUILD);
+
+    expect(built.digest).toBe('bbbb2222');
   });
 
   it('has an empty digest when the output names none', async () => {
     spy.mockReturnValue('Step 1/1 : FROM alpine\n');
 
-    expect((await Build.run(docker, 'app', 'id1', BUILD)).digest).toBe('');
+    const built = await Build.run(docker, 'app', 'id1', BUILD);
+
+    expect(built.digest).toBe('');
   });
 });
 

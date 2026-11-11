@@ -61,7 +61,6 @@ export class OciConfig {
 
   /**
    * Path to the Dockerfile relative to the project root.
-   *
    * @returns Dockerfile path, defaulting to `"Dockerfile"`.
    */
   getDockerFile(): string {
@@ -70,7 +69,6 @@ export class OciConfig {
 
   /**
    * Docker registry hostname such as `ghcr.io` or `docker.io`.
-   *
    * @returns Registry string or `undefined`.
    */
   getDockerRegistry(): string | undefined {
@@ -79,7 +77,6 @@ export class OciConfig {
 
   /**
    * Docker image name without registry or project prefix.
-   *
    * @returns Image name or `undefined`.
    */
   getDockerImage(): string | undefined {
@@ -89,7 +86,6 @@ export class OciConfig {
   /**
    * Project or organization segment inserted between registry and
    * image name in the full repository path.
-   *
    * @returns Project name or `undefined`.
    */
   getDockerProject(): string | undefined {
@@ -99,9 +95,8 @@ export class OciConfig {
   /**
    * Tag templates applied to the built image. Supports `{{variable}}`
    * placeholders resolved at build time.
-   *
    * @returns A fresh array of tag template strings (never the caller's
-   *          own array).
+   * own array).
    */
   getDockerTags(): readonly string[] {
     const tags = this.config.dockerTags ?? [
@@ -115,27 +110,24 @@ export class OciConfig {
   /**
    * Build arguments passed via `--build-arg`. String values support
    * template rendering; boolean `true` passes the key without a value.
-   *
    * @returns A shallow copy of the build-argument map.
    */
   getDockerArgs(): Readonly<Record<string, string | boolean>> {
-    return { ...(this.config.dockerArgs ?? {}) };
+    return { ...this.config.dockerArgs };
   }
 
   /**
    * Extra flags forwarded directly to `docker build`. Keys are
    * normalized to `--kebab-case`. A `null` value emits the flag
    * without an argument.
-   *
    * @returns A shallow copy of the build-flag map.
    */
   getDockerBuildFlags(): Readonly<Record<string, string | string[] | null>> {
-    return { ...(this.config.dockerBuildFlags ?? {}) };
+    return { ...this.config.dockerBuildFlags };
   }
 
   /**
    * Target platforms for multi-architecture builds via `docker buildx`.
-   *
    * @returns A fresh array of platform strings such as `"linux/amd64"`.
    */
   getDockerPlatform(): readonly string[] {
@@ -145,7 +137,6 @@ export class OciConfig {
 
   /**
    * Whether the image should be pushed to the registry during publish.
-   *
    * @returns `true` unless explicitly disabled.
    */
   isPublishEnabled(): boolean {
@@ -155,7 +146,6 @@ export class OciConfig {
   /**
    * Whether Docker registry login should be attempted when credentials
    * are present.
-   *
    * @returns `true` unless explicitly disabled.
    */
   isLoginEnabled(): boolean {
@@ -164,7 +154,6 @@ export class OciConfig {
 
   /**
    * Build context directory relative to the project root.
-   *
    * @returns Context path, defaulting to `"."`.
    */
   getDockerContext(): string {
@@ -175,7 +164,6 @@ export class OciConfig {
    * Docker network used during the build. When not configured, no
    * `--network` flag is passed, which allows both Docker and Podman
    * to use their own default networking.
-   *
    * @returns Network name or `undefined`.
    */
   getDockerNetwork(): string | undefined {
@@ -184,7 +172,6 @@ export class OciConfig {
 
   /**
    * Whether local images should be removed after a successful push.
-   *
    * @returns `true` unless explicitly disabled.
    */
   isAutoCleanEnabled(): boolean {
@@ -193,7 +180,6 @@ export class OciConfig {
 
   /**
    * Whether `--quiet` is passed to `docker build` to suppress output.
-   *
    * @returns `true` unless explicitly disabled.
    */
   isBuildQuiet(): boolean {
@@ -202,7 +188,6 @@ export class OciConfig {
 
   /**
    * Whether `--no-cache` is passed to `docker build`.
-   *
    * @returns `true` only when explicitly enabled.
    */
   isNoCacheEnabled(): boolean {
@@ -211,7 +196,6 @@ export class OciConfig {
 
   /**
    * Cache sources passed via `--cache-from` to `docker build`.
-   *
    * @returns A fresh array of cache source strings.
    */
   getDockerBuildCacheFrom(): readonly string[] {
@@ -222,7 +206,6 @@ export class OciConfig {
 
   /**
    * Timeout in milliseconds for each Docker CLI invocation.
-   *
    * @returns Configured timeout, defaulting to 600 000 ms (10 minutes).
    */
   getDockerTimeout(): number {
@@ -232,7 +215,6 @@ export class OciConfig {
   /**
    * Whether `docker buildx build` should be used instead of plain
    * `docker build`. Enabled automatically when platforms are specified.
-   *
    * @returns `true` when at least one platform is configured.
    */
   isBuildxEnabled(): boolean {
@@ -247,7 +229,6 @@ export class OciConfig {
    * path defaults to `docker-bake.hcl`, and the tag-injection target
    * defaults to the configured `target`, or `*` (all targets) when only
    * a `group` is given.
-   *
    * @returns Normalized bake settings, or `undefined` when not set.
    */
   getDockerBake(): BakeSettings | undefined {
@@ -265,7 +246,6 @@ export class OciConfig {
 
   /**
    * Registry username from the `DOCKER_REGISTRY_USER` env variable.
-   *
    * @returns Username or `undefined`.
    */
   getRegistryUser(): string | undefined {
@@ -275,7 +255,6 @@ export class OciConfig {
   /**
    * Registry password from `DOCKER_REGISTRY_PASSWORD`, falling back
    * to `GITHUB_TOKEN` when the password variable is not set.
-   *
    * @returns Password or `undefined`.
    */
   getRegistryPassword(): string | undefined {
@@ -284,7 +263,6 @@ export class OciConfig {
 
   /**
    * Whether any credential variable (user or password) is present.
-   *
    * @returns `true` when at least one credential is set.
    */
   hasCredentials(): boolean {

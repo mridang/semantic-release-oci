@@ -18,22 +18,50 @@ const MIN_SECRET_LENGTH = 4;
  */
 const MIN_DEFAULT_LENGTH = 6;
 
+/** A pattern for any of the keywords standing alone or set off by punctuation. */
+function wordIn(words: string[]): RegExp {
+  return new RegExp(`(?:^|[^a-z])(?:${words.join('|')})(?:[^a-z]|$)`, 'i');
+}
+
 /**
  * Key names (of build arguments and of `key=value` pairs) that carry a
  * credential. A name matches when the word stands alone or is set off by
  * punctuation, so `NPM_TOKEN` and `secret_access_key` match and `AUTHORS`,
  * `VERSION` and `KEYBOARD` do not.
  */
-const SENSITIVE_KEY =
-  /(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?|api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)/i;
+export const SENSITIVE_KEY = wordIn([
+  'token',
+  'secret',
+  'passw(?:or)?d',
+  'credentials?',
+  'api-?key',
+  'access-?key',
+  'key',
+  'auth',
+  'cert',
+  'npmrc',
+]);
 
 /**
  * Names of build arguments that carry a known-public release variable, such
  * as a version, a commit or a build date. These are the only literal build
  * arguments that are not hidden from error text by default.
  */
-const PUBLIC_KEY =
-  /(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha|git-?head|git-?commit|commit|revision|build-?date|build-?time|channel)(?:[^a-z]|$)/i;
+export const PUBLIC_KEY = wordIn([
+  'version',
+  'major',
+  'minor',
+  'patch',
+  'git-?tag',
+  'git-?sha',
+  'git-?head',
+  'git-?commit',
+  'commit',
+  'revision',
+  'build-?date',
+  'build-?time',
+  'channel',
+]);
 
 /**
  * Values too common to hide when only the place made them secret: hiding
@@ -80,9 +108,8 @@ interface Assignment {
  * argument after `--build-arg` or `--set`, or the joined form
  * `--build-arg=KEY=value`. A `--set` only counts when it sets a build
  * argument (`*.args.KEY=value`). The value starts at the first `=`.
- *
- * @param arg      The argument.
- * @param previous The argument before it.
+ * @param arg - The argument.
+ * @param previous - The argument before it.
  * @returns The assignment, or undefined when the argument is not one.
  */
 function assignmentOf(
@@ -93,8 +120,8 @@ function assignmentOf(
   const flag = joined?.[1] ?? previous;
   const payload = joined?.[2] ?? arg;
   const split = payload.indexOf('=');
-  const name = split < 0 ? payload : payload.slice(0, split);
-  const value = split < 0 ? undefined : payload.slice(split + 1);
+  const name = split === -1 ? payload : payload.slice(0, split);
+  const value = split === -1 ? undefined : payload.slice(split + 1);
   if (flag === '--build-arg') {
     return { payload, key: name, value };
   }
@@ -108,13 +135,12 @@ function assignmentOf(
  * The password of a `user:password@host` cache reference in one piece of a
  * cache spec. The piece is cut at its last `@` first, so the pattern only
  * ever scans the text before it, once.
- *
- * @param piece One comma-separated piece of a cache spec.
+ * @param piece - One comma-separated piece of a cache spec.
  * @returns The password, or undefined when the piece has none.
  */
 function cachePassword(piece: string): string | undefined {
   const at = piece.lastIndexOf('@');
-  if (at < 0) {
+  if (at === -1) {
     return undefined;
   }
   return /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i.exec(
@@ -122,35 +148,42 @@ function cachePassword(piece: string): string | undefined {
   )?.[1];
 }
 
+/** Reads a file, or gives undefined when it cannot be read. */
+export type FileReader = (
+  path: string,
+) => Promise<string | undefined> | string | undefined;
+
 /**
  * Where a `--secret` mount gets its value: the environment variable named by
  * `env=` and the file named by `src=` or `source=`.
- *
- * @param spec     The `--secret` specification (`id=npm,env=TOKEN`).
- * @param env      The environment docker runs with.
- * @param readFile Reads a file, or returns undefined when it cannot.
+ * @param spec - The `--secret` specification (`id=npm,env=TOKEN`).
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The values the mount will carry.
  */
 function mountSecrets(
   spec: string,
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined,
-): readonly (string | undefined)[] {
-  return spec.split(',').map((piece) => {
-    const at = piece.indexOf('=');
-    const name = piece.slice(0, at);
-    const value = piece.slice(at + 1);
-    if (at < 0) {
+  readFile: FileReader,
+): Promise<readonly (string | undefined)[]> {
+  return Promise.all(
+    spec.split(',').map(async (piece) => {
+      const at = piece.indexOf('=');
+      const name = piece.slice(0, at);
+      const value = piece.slice(at + 1);
+      if (at < 0) {
+        return undefined;
+      }
+      if (name === 'env') {
+        return Object.hasOwn(env, value) ? env[value] : undefined;
+      }
+      if (name === 'src' || name === 'source') {
+        const text = await readFile(value);
+        return text?.trim();
+      }
       return undefined;
-    }
-    if (name === 'env') {
-      return Object.hasOwn(env, value) ? env[value] : undefined;
-    }
-    if (name === 'src' || name === 'source') {
-      return readFile(value)?.trim();
-    }
-    return undefined;
-  });
+    }),
+  );
 }
 
 /**
@@ -159,19 +192,18 @@ function mountSecrets(
  * `--auth-token=...`), the password of `user:password@host` in a cache spec,
  * the value of a flag that names a credential (`--auth-token`), and what a
  * `--secret` mount reads from the environment or a file.
- *
- * @param arg      The argument.
- * @param previous The argument before it.
- * @param env      The environment docker runs with.
- * @param readFile Reads a file, or returns undefined when it cannot.
+ * @param arg - The argument.
+ * @param previous - The argument before it.
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The credential values found.
  */
-function embeddedSecrets(
+async function embeddedSecrets(
   arg: string,
   previous: string | undefined,
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined,
-): readonly (string | undefined)[] {
+  readFile: FileReader,
+): Promise<readonly (string | undefined)[]> {
   const pieces = arg.split(',');
   const pairs = pieces.map((piece) => {
     const at = piece.indexOf('=');
@@ -184,12 +216,13 @@ function embeddedSecrets(
   const cache =
     (previous !== undefined && CACHE_FLAG.test(previous)) ||
     /^--cache-(?:from|to)=/.test(arg);
-  const passwords = cache ? pieces.map(cachePassword) : [];
+  const passwords = cache ? pieces.map((piece) => cachePassword(piece)) : [];
   const flagValue =
     previous !== undefined && SENSITIVE_FLAG.test(previous) ? [arg] : [];
   const mount =
     previous === '--secret' ? arg : /^--secret=(.*)$/.exec(arg)?.[1];
-  const mounted = mount === undefined ? [] : mountSecrets(mount, env, readFile);
+  const mounted =
+    mount === undefined ? [] : await mountSecrets(mount, env, readFile);
   return [...pairs, ...passwords, ...flagValue, ...mounted];
 }
 
@@ -199,9 +232,8 @@ function embeddedSecrets(
  * way a credential would be, unless its name is a known-public release
  * variable or the value is a common word; a value docker takes from the
  * environment is looked up there first.
- *
- * @param assignment The build argument.
- * @param env        The environment docker runs with.
+ * @param assignment - The build argument.
+ * @param env - The environment docker runs with.
  * @returns The value and its length floor, or undefined when it is public.
  */
 function assignedSecret(
@@ -234,30 +266,32 @@ function assignedSecret(
  * flag values and cache specs, what `--secret` mounts read from the
  * environment or from files, and the text sent on stdin. Versions, tags and
  * digests are not build arguments and are never hidden.
- *
- * @param args     Docker arguments.
- * @param env      The environment docker runs with.
- * @param readFile Reads a file named by `--secret src=`, or returns undefined
- *                 when it cannot.
- * @param input    Text written to stdin, such as a registry password.
+ * @param args - Docker arguments.
+ * @param env - The environment docker runs with.
+ * @param readFile - Reads a file named by `--secret src=`, or returns undefined
+ * when it cannot.
+ * @param input - Text written to stdin, such as a registry password.
  * @returns The distinct values worth hiding.
  */
-export function secretsIn(
+export async function secretsIn(
   args: readonly string[],
   env: Readonly<Record<string, string | undefined>>,
-  readFile: (path: string) => string | undefined = () => undefined,
+  readFile: FileReader = () => undefined,
   input?: string,
-): readonly string[] {
-  const found = args.flatMap((arg, index) => {
-    const previous = args[index - 1];
-    const assignment = assignmentOf(arg, previous);
-    const assigned = assignment ? assignedSecret(assignment, env) : undefined;
-    const explicit = embeddedSecrets(arg, previous, env, readFile).flatMap(
-      (value) =>
+): Promise<readonly string[]> {
+  const scanned = await Promise.all(
+    args.map(async (arg, index) => {
+      const previous = args[index - 1];
+      const assignment = assignmentOf(arg, previous);
+      const assigned = assignment ? assignedSecret(assignment, env) : undefined;
+      const embedded = await embeddedSecrets(arg, previous, env, readFile);
+      const explicit = embedded.flatMap((value) =>
         value === undefined ? [] : [{ value, floor: MIN_SECRET_LENGTH }],
-    );
-    return assigned ? [assigned, ...explicit] : explicit;
-  });
+      );
+      return assigned ? [assigned, ...explicit] : explicit;
+    }),
+  );
+  const found = scanned.flat();
   const sent =
     input === undefined ? [] : [{ value: input, floor: MIN_SECRET_LENGTH }];
   const values = [...found, ...sent]
@@ -270,15 +304,15 @@ export function secretsIn(
  * The texts to hide for a secret: the secret, each line of it (BuildKit
  * prefixes every line of output), and its base64 form. The URL-encoded and
  * JSON-escaped forms are added by {@link redactSecrets}.
- *
- * @param secret A secret value.
+ * @param secret - A secret value.
  * @returns The distinct texts to hide.
  */
 function formsOf(secret: string): readonly string[] {
   const parts = [secret, ...secret.split(/\r?\n/).map((line) => line.trim())];
   const forms = parts.flatMap((part) => {
     const base64 = Buffer.from(part).toString('base64');
-    return [part, base64, base64.replace(/=+$/, '')];
+
+    return [part, base64, base64.split('=', 1)[0] ?? ''];
   });
   return [...new Set(forms)].filter((form) => form.length >= MIN_SECRET_LENGTH);
 }
@@ -287,21 +321,22 @@ function formsOf(secret: string): readonly string[] {
  * Replace every secret, in every form, in a text. This is best effort: a
  * secret that a build step transforms in another way (hashing, splitting
  * across lines) is not recognised.
- *
- * @param text    Text that may contain secrets, such as docker's stderr.
- * @param secrets Values to hide, as returned by {@link secretsIn}.
+ * @param text - Text that may contain secrets, such as docker's stderr.
+ * @param secrets - Values to hide, as returned by {@link secretsIn}.
  * @returns The text with every secret replaced.
  */
 export function scrub(text: string, secrets: readonly string[]): string {
-  return redactSecrets(text, secrets.flatMap(formsOf));
+  return redactSecrets(
+    text,
+    secrets.flatMap((secret) => formsOf(secret)),
+  );
 }
 
 /**
  * The args with what is known by position to be sensitive masked, whatever
  * its length: the value of every build argument, and the user of a registry
  * login.
- *
- * @param args Docker arguments.
+ * @param args - Docker arguments.
  * @returns The arguments, safe to join into a log line.
  */
 export function maskArgs(args: readonly string[]): readonly string[] {

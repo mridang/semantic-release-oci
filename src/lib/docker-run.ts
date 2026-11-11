@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readFile as readTextFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
@@ -6,7 +6,7 @@ import type { VerifyConditionsContext } from 'semantic-release';
 import { codeOf, signalOf, statusOf } from '../utils/error.js';
 import { run as defaultRun, type Runner } from '../utils/exec.js';
 import { isRecord, stringAt } from '../utils/object.js';
-import { maskArgs, scrub, secretsIn } from './secrets.js';
+import { maskArgs, scrub, secretsIn, type FileReader } from './secrets.js';
 
 /**
  * Runs one docker command and returns what it wrote to stdout. Every noun
@@ -33,19 +33,21 @@ export interface DockerRunOptions {
   /** Runs the program; only tests pass one. */
   readonly run?: Runner;
   /** Reads a file named by `--secret src=`; only tests pass one. */
-  readonly readFile?: (file: string) => string | undefined;
+  readonly readFile?: FileReader;
 }
 
 /**
  * Reads a text file, relative to the working directory.
- *
- * @param cwd  Directory relative paths are resolved against.
- * @param file Path of the file.
+ * @param cwd - Directory relative paths are resolved against.
+ * @param file - Path of the file.
  * @returns The contents, or undefined when the file cannot be read.
  */
-function readText(cwd: string, file: string): string | undefined {
+async function readText(
+  cwd: string,
+  file: string,
+): Promise<string | undefined> {
   try {
-    return fs.readFileSync(path.resolve(cwd, file), 'utf8');
+    return await readTextFile(path.resolve(cwd, file), 'utf8');
   } catch {
     return undefined;
   }
@@ -69,9 +71,10 @@ class DockerCommandError extends SemanticReleaseError {
   readonly errno: string | undefined;
 
   /**
-   * @param message The scrubbed message.
-   * @param source  The error that was thrown by the runner.
+   * @param message - The scrubbed message.
+   * @param source - The error that was thrown by the runner.
    */
+  // eslint-disable-next-line unicorn/custom-error-definition -- the rule requires name = 'DockerCommandError', but error.name must stay the 'SemanticReleaseError' its base class sets: docker-run.test.ts pins it and renaming it would change the error's observable shape
   constructor(message: string, source: unknown) {
     super(message, 'EDOCKER');
     this.status = statusOf(source);
@@ -85,8 +88,7 @@ class DockerCommandError extends SemanticReleaseError {
  * and never by its message text, which holds the command line: the code and
  * signal when there are any, and what the command wrote to stderr. A value
  * that is not an error is described by its string form.
- *
- * @param error The value thrown by the runner.
+ * @param error - The value thrown by the runner.
  * @returns The lines of detail, which are not yet scrubbed.
  */
 function detailsOf(error: unknown): readonly string[] {
@@ -105,8 +107,7 @@ function detailsOf(error: unknown): readonly string[] {
  * shell, in the release's directory and environment; hides the secrets a
  * command carries from the logged line and from any error; and rebuilds a
  * failure from scrubbed parts only.
- *
- * @param options Directory, environment, timeout, logger and runner.
+ * @param options - Directory, environment, timeout, logger and runner.
  * @returns The function that runs a docker command.
  */
 export function dockerRun(options: DockerRunOptions): DockerRun {
@@ -116,10 +117,10 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
   const env = { ...process.env, ...options.env };
   return async (args, input) => {
     const nul = args.findIndex((arg) => arg.includes('\0'));
-    if (nul >= 0) {
+    if (nul !== -1) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
     }
-    const secrets = secretsIn(args, env, readFile, input);
+    const secrets = await secretsIn(args, env, readFile, input);
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env['GITHUB_ACTIONS'] === 'true') {
@@ -148,8 +149,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
 
 /**
  * Verifies the Docker CLI is installed and reachable.
- *
- * @param docker Runs docker commands.
+ * @param docker - Runs docker commands.
  * @throws SemanticReleaseError with code `ENOENT` when Docker is not
  *         installed; any other failure is rethrown with its detail.
  */

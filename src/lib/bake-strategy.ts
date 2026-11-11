@@ -1,10 +1,10 @@
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
 import type { BakeSettings, OciConfig } from '../plugin-config.js';
 import type { Runner } from '../utils/exec.js';
+import { pathExists } from '../utils/fs.js';
 import { Bake } from './bake.js';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult } from './types.js';
@@ -25,10 +25,10 @@ export class BakeStrategy extends ImageStrategy {
   readonly isBuildx = true;
 
   /**
-   * @param config  Resolved plugin configuration.
-   * @param context Semantic-release context with cwd, env, and logger.
-   * @param bake    The resolved `dockerBake` settings.
-   * @param run     Runs the docker binary; only tests pass one.
+   * @param config - Resolved plugin configuration.
+   * @param context - Semantic-release context with cwd, env, and logger.
+   * @param bake - The resolved `dockerBake` settings.
+   * @param run - Runs the docker binary; only tests pass one.
    */
   constructor(
     config: OciConfig,
@@ -42,19 +42,18 @@ export class BakeStrategy extends ImageStrategy {
   /**
    * Verifies a `group` or `target` is configured and the bake file
    * exists.
-   *
    * @returns A log label naming the verified bake file.
    */
-  verifyTarget(): string {
-    const { bake } = this;
+  async verifyTarget(): Promise<string> {
+    const { bake, cwd } = this;
     if (!bake.group && !bake.target) {
       throw new SemanticReleaseError(
         'dockerBake requires either "group" or "target" to be set.',
         'EINVAL',
       );
     }
-    const bakeFile = path.resolve(this.cwd, bake.file);
-    if (!fs.existsSync(bakeFile)) {
+    const bakeFile = path.resolve(cwd, bake.file);
+    if (!(await pathExists(bakeFile))) {
       throw new SemanticReleaseError(
         `Bake file not found at ${bakeFile}`,
         'ENOENT',
@@ -67,12 +66,11 @@ export class BakeStrategy extends ImageStrategy {
    * Runs `docker buildx bake`, injecting version tags and build args via
    * `--set`, and reads the resulting digest from a metadata file that is
    * always cleaned up afterwards.
-   *
-   * @param params Resolved per-build inputs.
-   * @returns      The captured digest hex and the rendered tags.
+   * @param params - Resolved per-build inputs.
+   * @returns The captured digest hex and the rendered tags.
    */
   async build(params: BuildParams): Promise<BuildResult> {
-    const { config, context, bake, cwd } = this;
+    const { config, context, bake, cwd, docker } = this;
     const { repo, tagTemplates, vars, buildId, isDryRun } = params;
     const tags = this.renderTags(tagTemplates, vars);
     const metadataFile = path.join(os.tmpdir(), `oci-bake-${buildId}.json`);
@@ -87,7 +85,7 @@ export class BakeStrategy extends ImageStrategy {
         ),
       );
 
-    const baked = await new Bake(this.docker, {
+    const baked = await new Bake(docker, {
       file: path.resolve(cwd, bake.file),
       metadataFile,
       imageTarget: bake.imageTarget,

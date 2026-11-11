@@ -1,5 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
-import { maskArgs, scrub, secretsIn } from '../../src/lib/secrets.js';
+import {
+  maskArgs,
+  PUBLIC_KEY,
+  scrub,
+  secretsIn,
+  SENSITIVE_KEY,
+} from '../../src/lib/secrets.js';
 
 describe('secretsIn', () => {
   const env = { FROM_ENV_TOKEN: 'ENVSECRET99', VERSION: '1.2.3.4.5' };
@@ -57,38 +63,43 @@ describe('secretsIn', () => {
     [['build', '--secret', 'id=npm,src=/home/x/.npmrc'], []],
     [['build', '--tag', 'repo:1.2.3@sha256:abcdef'], []],
     [['login', 'ghcr.io', '-u', 'someuser1', '--password-stdin'], []],
-  ])('finds the secrets in %j', (args, expected) => {
-    expect(secretsIn(args, env, readFile)).toEqual(expected);
+  ])('finds the secrets in %j', async (args, expected) => {
+    expect(await secretsIn(args, env, readFile)).toEqual(expected);
   });
 
-  it('ignores an inherited member of the environment', () => {
-    expect(secretsIn(['build', '--build-arg', 'constructor'], {})).toEqual([]);
+  it('ignores an inherited member of the environment', async () => {
+    expect(
+      await secretsIn(['build', '--build-arg', 'constructor'], {}),
+    ).toEqual([]);
   });
 
-  it('reads no files unless it is given a reader', () => {
-    expect(secretsIn(['build', '--secret', 'id=a,src=/run/token'], {})).toEqual(
-      [],
-    );
+  it('reads no files unless it is given a reader', async () => {
+    expect(
+      await secretsIn(['build', '--secret', 'id=a,src=/run/token'], {}),
+    ).toEqual([]);
   });
 
-  it('includes what is sent on stdin', () => {
-    expect(secretsIn(['login'], {}, undefined, 'registry-password')).toEqual([
-      'registry-password',
-    ]);
-    expect(secretsIn(['login'], {}, undefined, 'abc')).toEqual([]);
+  it('includes what is sent on stdin', async () => {
+    expect(
+      await secretsIn(['login'], {}, undefined, 'registry-password'),
+    ).toEqual(['registry-password']);
+    expect(await secretsIn(['login'], {}, undefined, 'abc')).toEqual([]);
   });
 
-  it('scans a long cache spec in linear time', () => {
+  it('scans a long cache spec in linear time', async () => {
     const started = performance.now();
 
-    secretsIn(['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`], {});
+    await secretsIn(
+      ['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`],
+      {},
+    );
 
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
-  it('lists each value once', () => {
+  it('lists each value once', async () => {
     expect(
-      secretsIn(
+      await secretsIn(
         [
           'build',
           '--build-arg',
@@ -108,6 +119,18 @@ describe('scrub', () => {
       '[redacted] and [redacted] and [redacted]',
     );
   });
+
+  it.each(['abcdefgh', 'abcdefghi', 'abcdefghij', 'abcdefghijk'])(
+    'replaces the base64 form of %s with or without its padding',
+    (secret) => {
+      const base64 = Buffer.from(secret).toString('base64');
+      const bare = base64.replaceAll('=', '');
+
+      expect(scrub(`x ${base64} y ${bare} z`, [secret])).toBe(
+        'x [redacted] y [redacted] z',
+      );
+    },
+  );
 
   it('replaces each line of a multi-line secret and the base64 form', () => {
     const secret = 'first-line-secret\nsecond-line-secret';
@@ -151,5 +174,82 @@ describe('maskArgs', () => {
     expect(
       maskArgs(['login', 'h', '-u', 'someone', '--password-stdin']),
     ).toEqual(['login', 'h', '-u', '[redacted]', '--password-stdin']);
+  });
+});
+
+describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
+  const oldSensitive = new RegExp(
+    [
+      '(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?',
+      'api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)',
+    ].join('|'),
+    'i',
+  );
+  const oldPublic = new RegExp(
+    [
+      '(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha',
+      'git-?head|git-?commit|commit|revision|build-?date|build-?time',
+      'channel)(?:[^a-z]|$)',
+    ].join('|'),
+    'i',
+  );
+
+  it.each([
+    'NPM_TOKEN',
+    'secret_access_key',
+    'AUTHORS',
+    'VERSION',
+    'KEYBOARD',
+    'git-sha',
+    'GITHUB_TAG',
+    'build_date',
+    'password',
+    'passwd',
+    '',
+  ])('treats %j like the old patterns', (name) => {
+    expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+    expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
+  });
+
+  it('matches the old patterns on seeded random names', () => {
+    let state = 9;
+    const random = (): number => {
+      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+      return state / 2 ** 32;
+    };
+    const pieces = [
+      'token',
+      'key',
+      'auth',
+      'cert',
+      'version',
+      'commit',
+      'git',
+      'sha',
+      'passw',
+      'or',
+      'd',
+      '-',
+      '_',
+      'x',
+      '1',
+      'api',
+      'build',
+      'date',
+    ];
+    for (let i = 0; i < 20_000; i += 1) {
+      let name = '';
+      for (let j = 0; j < 4; j += 1) {
+        name += pieces[Math.floor(random() * pieces.length)];
+      }
+      expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+      expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
+    }
+  });
+
+  it('agrees on a long adversarial input', () => {
+    const name = `${'token-'.repeat(30_000)}x`;
+    expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+    expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
   });
 });

@@ -7,30 +7,31 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 import { stepContext } from './utils/context.js';
 import { isRecord, stringAt } from '../src/utils/object.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const execAsync = promisify(exec);
 
-function requireDocker(): void {
+async function requireDocker(): Promise<void> {
   try {
-    execSync('docker version', { stdio: 'pipe' });
+    await execAsync('docker version');
   } catch {
     throw new Error('Docker is required to run these tests.');
   }
 }
 
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'semantic-release-oci-it-'));
+async function makeTempDir(): Promise<string> {
+  return fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'semantic-release-oci-it-'),
+  );
 }
 
 describe('semantic-release-oci (integration, real Docker)', () => {
@@ -49,7 +50,7 @@ describe('semantic-release-oci (integration, real Docker)', () => {
   let workdir: string;
 
   beforeAll(async () => {
-    requireDocker();
+    await requireDocker();
 
     registry = await new GenericContainer('registry:2')
       .withExposedPorts(5000)
@@ -65,16 +66,16 @@ describe('semantic-release-oci (integration, real Docker)', () => {
     }
   });
 
-  beforeEach(() => {
-    workdir = makeTempDir();
-    fs.cpSync(
-      path.join(__dirname, 'fixture', 'Dockerfile'),
+  beforeEach(async () => {
+    workdir = await makeTempDir();
+    await fs.promises.copyFile(
+      new URL('fixture/Dockerfile', import.meta.url),
       path.join(workdir, 'Dockerfile'),
     );
   });
 
-  afterEach(() => {
-    fs.rmSync(workdir, { recursive: true, force: true });
+  afterEach(async () => {
+    await fs.promises.rm(workdir, { recursive: true, force: true });
   });
 
   it('verifyConditions succeeds with Dockerfile present', async () => {
@@ -133,9 +134,8 @@ describe('semantic-release-oci (integration, real Docker)', () => {
     await prepare(cfg, ctx);
     await publish(cfg, ctx);
 
-    const tagsResponse = execSync(
+    const { stdout: tagsResponse } = await execAsync(
       `curl -s http://${registryHost}/v2/integration-test/tags/list`,
-      { encoding: 'utf8' },
     );
     const parsed: unknown = JSON.parse(tagsResponse);
     if (!isRecord(parsed)) {
@@ -170,10 +170,10 @@ describe('semantic-release-oci (integration, real Docker)', () => {
     await prepare(cfg, ctx);
     await publish(cfg, ctx);
 
-    const images = execSync(`docker images ${registryHost}/${imageName} -q`, {
-      encoding: 'utf8',
-    }).trim();
+    const { stdout: images } = await execAsync(
+      `docker images ${registryHost}/${imageName} -q`,
+    );
 
-    expect(images).toBe('');
+    expect(images.trim()).toBe('');
   }, 180_000);
 });

@@ -7,20 +7,21 @@ import type { DockerRun } from './docker-run.js';
  * metadata file. Looks up the configured image target, falling back to
  * the first target that recorded a `containerimage.digest`. The
  * `sha256:` prefix is stripped to match the digest shape used elsewhere.
- *
- * @param metadataPath Path to the bake metadata JSON file.
- * @param imageTarget  Target whose digest is preferred, or `"*"`.
+ * @param metadataPath - Path to the bake metadata JSON file.
+ * @param imageTarget - Target whose digest is preferred, or `"*"`.
  * @returns The image digest hex, or an empty string when unavailable.
  */
-export function parseBakeDigest(
+export async function parseBakeDigest(
   metadataPath: string,
   imageTarget: string,
-): string {
-  if (!metadataPath || !fs.existsSync(metadataPath)) {
+): Promise<string> {
+  if (!metadataPath) {
     return '';
   }
   try {
-    const meta: unknown = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+    const meta: unknown = JSON.parse(
+      await fs.promises.readFile(metadataPath, 'utf8'),
+    );
     if (!isRecord(meta)) {
       return '';
     }
@@ -74,8 +75,8 @@ export interface BakeOptions {
  */
 export class BakedImages {
   /**
-   * @param digest Digest hex of the image target, or an empty string when
-   *               bake did not record one.
+   * @param digest - Digest hex of the image target, or an empty string when
+   * bake did not record one.
    */
   constructor(readonly digest: string) {}
 }
@@ -86,8 +87,8 @@ export class BakedImages {
  */
 export class Bake {
   /**
-   * @param docker  Runs docker commands.
-   * @param options What to bake.
+   * @param docker - Runs docker commands.
+   * @param options - What to bake.
    */
   constructor(
     private readonly docker: DockerRun,
@@ -97,7 +98,6 @@ export class Bake {
   /**
    * Runs the bake and reads the digest it recorded. The metadata file is
    * always removed afterwards.
-   *
    * @returns The baked images.
    */
   async run(): Promise<BakedImages> {
@@ -124,10 +124,10 @@ export class Bake {
         ...(options.selector ? [options.selector] : []),
       ]);
       return new BakedImages(
-        parseBakeDigest(options.metadataFile, options.imageTarget),
+        await parseBakeDigest(options.metadataFile, options.imageTarget),
       );
     } finally {
-      fs.rmSync(options.metadataFile, { force: true });
+      await fs.promises.rm(options.metadataFile, { force: true });
     }
   }
 }
