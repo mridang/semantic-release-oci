@@ -8,7 +8,6 @@ import path from 'node:path';
  */
 const root = await mkdtemp(path.join(tmpdir(), 'semantic-release-oci-'));
 
-// eslint-disable-next-line n/no-sync -- process 'exit' handlers run synchronously and cannot await, so only rmSync can clean up there
 process.on('exit', () => rmSync(root, { recursive: true, force: true }));
 
 /**
