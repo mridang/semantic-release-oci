@@ -15,7 +15,12 @@ export type DockerSpy = jest.Mock<
  */
 export function dockerSpy(): DockerSpy {
   return jest
-    .fn<(args: readonly string[], options?: ExecOptions) => string>()
+    .fn<
+      (
+        args: readonly string[],
+        options?: ExecOptions,
+      ) => string | Promise<string>
+    >()
     .mockReturnValue('');
 }
 
@@ -25,7 +30,7 @@ export function dockerSpy(): DockerSpy {
  * @returns A runner that forwards to it.
  */
 export function runnerOf(spy: DockerSpy): Runner {
-  return async (_file, args, options) => spy(args, options);
+  return async (_file, args, options) => await spy(args, options);
 }
 
 /**

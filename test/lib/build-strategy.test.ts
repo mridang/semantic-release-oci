@@ -52,7 +52,7 @@ describe('BuildStrategy', () => {
 
   describe('verifyTarget', () => {
     it('should return a label for an existing Dockerfile', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -62,7 +62,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should throw ENOENT when the Dockerfile does not exist', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
       await expect(strategy.verifyTarget()).rejects.toThrow(
@@ -71,7 +71,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should resolve a custom Dockerfile path', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await fs.promises.mkdir(path.join(tmpDir, 'build'), { recursive: true });
       await fs.promises.writeFile(
         path.join(tmpDir, 'build', 'Dockerfile'),
@@ -91,7 +91,7 @@ describe('BuildStrategy', () => {
   // eslint-disable-next-line sonarjs/max-lines-per-function -- splitting this describe would re-indent every test in it
   describe('build', () => {
     it('should build a standard docker image with default tags', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123def456\n');
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
@@ -108,7 +108,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should tag with the buildId for non-buildx builds', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -121,7 +121,7 @@ describe('BuildStrategy', () => {
     it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
       'should render the inherited name {{%s}} as an unknown variable',
       async (name) => {
-        const tmpDir = makeTempDir();
+        const tmpDir = await makeTempDir();
         await writeDockerfile(tmpDir);
         const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -135,7 +135,7 @@ describe('BuildStrategy', () => {
     );
 
     it('should drop repeated tags', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -148,7 +148,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should use buildx when dockerPlatform is set', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -167,7 +167,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should not include --push in buildx dry-run mode', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -181,7 +181,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should omit --push in buildx mode when dockerPublish is false', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -197,7 +197,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should not tag with buildId in buildx mode', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -212,7 +212,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should include --pull in buildx mode', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -226,7 +226,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should skip version tags in dry-run mode', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -244,7 +244,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should pass build args with template rendering', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -259,7 +259,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should pass boolean build args without value', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -275,7 +275,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should include --no-cache when configured', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -289,7 +289,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should include --cache-from flags in build command', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -304,7 +304,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should pass extra build flags', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -320,7 +320,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should pass provenance flag via dockerBuildFlags', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -336,7 +336,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should use single dash for single-char build flag keys', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -351,7 +351,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should repeat flags for array build flag values', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -371,7 +371,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should pass through flag keys that already start with a dash', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -387,7 +387,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should normalize underscore flag keys to kebab-case', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -402,7 +402,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should forward dockerTimeout to exec options', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -418,7 +418,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should omit --quiet when dockerBuildQuiet is false', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -432,7 +432,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should use a custom Dockerfile path in build command', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await fs.promises.mkdir(path.join(tmpDir, 'build'), { recursive: true });
       await fs.promises.writeFile(
         path.join(tmpDir, 'build', 'Dockerfile'),
@@ -450,7 +450,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should use a custom context path in build command', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       await fs.promises.mkdir(path.join(tmpDir, 'app'), { recursive: true });
       const { strategy } = makeStrategy(tmpDir, {
@@ -465,7 +465,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should use a custom network in build command', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
@@ -479,7 +479,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should produce no version tags when tags is empty', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
@@ -491,7 +491,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should build with an empty image name', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {});
 
@@ -506,7 +506,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should extract the SHA from build output', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue(
         'Step 1/1 : FROM alpine\nwriting image sha256:abcdef1234567890abcdef1234567890\n',
@@ -520,7 +520,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should return an empty SHA when no digest is in build output', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('Step 1/1 : FROM alpine\n');
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
@@ -531,7 +531,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should propagate build errors', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
         throw failure('build failed');
@@ -557,7 +557,7 @@ describe('BuildStrategy', () => {
     }
 
     it('should tag and push each tag for non-buildx builds', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -571,7 +571,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should push the version tag before the floating tags', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -591,7 +591,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should leave the floating tags unpushed when the version push fails', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -612,7 +612,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should keep the order of the tags when there is no version', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -632,7 +632,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should push a tag without the version after the version tags, in order', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -655,7 +655,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should log what a push wrote', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy, context } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -672,7 +672,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should be a no-op for buildx builds', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerPlatform: ['linux/amd64'],
@@ -687,7 +687,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should remove images when dockerAutoClean is true', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
       execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return 'img1\nimg2\n';
@@ -701,7 +701,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should skip rmi when no images are found during cleanup', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
       execMock.mockImplementation((args: readonly string[]) => {
         if (args[0] === 'images') return '   \n';
@@ -715,7 +715,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should continue gracefully when image cleanup fails', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy, context } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
       });
@@ -734,7 +734,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should skip cleanup when dockerAutoClean is false', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerAutoClean: false,
@@ -748,7 +748,7 @@ describe('BuildStrategy', () => {
     });
 
     it('should skip push when dockerPublish is false', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerImage: 'my-app',
         dockerPublish: false,

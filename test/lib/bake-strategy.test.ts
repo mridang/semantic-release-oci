@@ -57,7 +57,7 @@ describe('BakeStrategy', () => {
 
   describe('verifyTarget', () => {
     it('should return a label for a valid bake file', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const file = await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
@@ -67,7 +67,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should throw EINVAL when neither group nor target is set', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerBake: {} });
 
@@ -77,7 +77,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should throw ENOENT when the bake file does not exist', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });
@@ -90,7 +90,7 @@ describe('BakeStrategy', () => {
 
   describe('build', () => {
     it('should drive buildx bake with file, metadata-file, and selector', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
@@ -109,7 +109,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should emit one --set tags override per tag', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
@@ -129,7 +129,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should scope tags to the wildcard target by default', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
@@ -143,7 +143,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should use cacheonly output and no tags in dry-run mode', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', imageTarget: 'image' },
@@ -157,7 +157,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should forward dockerArgs as bake --set args', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
@@ -171,7 +171,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should skip boolean dockerArgs', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
@@ -185,7 +185,7 @@ describe('BakeStrategy', () => {
     });
 
     it('should prefer target over group as the selector', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release', target: 'image' },
@@ -198,12 +198,11 @@ describe('BakeStrategy', () => {
     });
 
     it('should capture the digest from the metadata file', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
-      execMock.mockImplementation((args: readonly string[]): string => {
+      execMock.mockImplementation(async (args: readonly string[]) => {
         const idx = args.indexOf('--metadata-file');
-        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
-        fs.writeFileSync(
+        await fs.promises.writeFile(
           args[idx + 1],
           JSON.stringify({
             image: { 'containerimage.digest': 'sha256:abc123' },
@@ -222,14 +221,13 @@ describe('BakeStrategy', () => {
     });
 
     it('should remove the metadata file after the build', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       let metadataPath = '';
-      execMock.mockImplementation((args: readonly string[]): string => {
+      execMock.mockImplementation(async (args: readonly string[]) => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
-        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
-        fs.writeFileSync(
+        await fs.promises.writeFile(
           metadataPath,
           JSON.stringify({
             image: { 'containerimage.digest': 'sha256:abc123' },
@@ -250,14 +248,13 @@ describe('BakeStrategy', () => {
     });
 
     it('should remove the metadata file even when the build fails', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       await writeBakeFile(tmpDir);
       let metadataPath = '';
-      execMock.mockImplementation((args: readonly string[]): string => {
+      execMock.mockImplementation(async (args: readonly string[]) => {
         const idx = args.indexOf('--metadata-file');
         metadataPath = args[idx + 1];
-        // eslint-disable-next-line n/no-sync -- test helper: the docker spy must write its metadata synchronously
-        fs.writeFileSync(metadataPath, '{}');
+        await fs.promises.writeFile(metadataPath, '{}');
         throw failure('build failed');
       });
       const { strategy } = makeStrategy(tmpDir, {
@@ -274,7 +271,7 @@ describe('BakeStrategy', () => {
 
   describe('finalizePublish', () => {
     it('should be a no-op', async () => {
-      const tmpDir = makeTempDir();
+      const tmpDir = await makeTempDir();
       const { strategy } = makeStrategy(tmpDir, {
         dockerBake: { group: 'release' },
       });

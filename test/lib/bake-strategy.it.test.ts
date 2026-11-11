@@ -1,13 +1,12 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { exec, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
 import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
 import type { BuildParams } from '../../src/lib/types.js';
 import { stepContext } from '../utils/context.js';
+import { execAsync } from '../utils/exec.js';
 
 /**
  * Whether a real `docker buildx bake` is reachable on this host. The
@@ -15,17 +14,14 @@ import { stepContext } from '../utils/context.js';
  * or buildx is absent (e.g. CI runners without a Docker daemon) instead
  * of failing.
  */
-const dockerAvailable: boolean = (() => {
+const dockerAvailable: boolean = await (async () => {
   try {
-    // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- bootstrap probe: it decides at load time whether the suite is defined, so it must be synchronous, and docker is looked up on PATH by design
-    execSync('docker buildx bake --help', { stdio: 'ignore' });
+    await execAsync('docker buildx bake --help');
     return true;
   } catch {
     return false;
   }
 })();
-
-const execAsync = promisify(exec);
 
 async function imageExists(ref: string): Promise<boolean> {
   try {

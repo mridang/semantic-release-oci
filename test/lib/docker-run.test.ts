@@ -265,7 +265,7 @@ describe('dockerRun', () => {
     });
 
     it('reads --secret files relative to the working directory by default', async () => {
-      const dir = makeTempDir();
+      const dir = await makeTempDir();
       await fs.promises.writeFile(
         path.join(dir, 'tok.txt'),
         'FileSecretVal888',
