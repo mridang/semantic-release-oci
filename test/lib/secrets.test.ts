@@ -57,38 +57,43 @@ describe('secretsIn', () => {
     [['build', '--secret', 'id=npm,src=/home/x/.npmrc'], []],
     [['build', '--tag', 'repo:1.2.3@sha256:abcdef'], []],
     [['login', 'ghcr.io', '-u', 'someuser1', '--password-stdin'], []],
-  ])('finds the secrets in %j', (args, expected) => {
-    expect(secretsIn(args, env, readFile)).toEqual(expected);
+  ])('finds the secrets in %j', async (args, expected) => {
+    expect(await secretsIn(args, env, readFile)).toEqual(expected);
   });
 
-  it('ignores an inherited member of the environment', () => {
-    expect(secretsIn(['build', '--build-arg', 'constructor'], {})).toEqual([]);
+  it('ignores an inherited member of the environment', async () => {
+    expect(
+      await secretsIn(['build', '--build-arg', 'constructor'], {}),
+    ).toEqual([]);
   });
 
-  it('reads no files unless it is given a reader', () => {
-    expect(secretsIn(['build', '--secret', 'id=a,src=/run/token'], {})).toEqual(
-      [],
-    );
+  it('reads no files unless it is given a reader', async () => {
+    expect(
+      await secretsIn(['build', '--secret', 'id=a,src=/run/token'], {}),
+    ).toEqual([]);
   });
 
-  it('includes what is sent on stdin', () => {
-    expect(secretsIn(['login'], {}, undefined, 'registry-password')).toEqual([
-      'registry-password',
-    ]);
-    expect(secretsIn(['login'], {}, undefined, 'abc')).toEqual([]);
+  it('includes what is sent on stdin', async () => {
+    expect(
+      await secretsIn(['login'], {}, undefined, 'registry-password'),
+    ).toEqual(['registry-password']);
+    expect(await secretsIn(['login'], {}, undefined, 'abc')).toEqual([]);
   });
 
-  it('scans a long cache spec in linear time', () => {
+  it('scans a long cache spec in linear time', async () => {
     const started = performance.now();
 
-    secretsIn(['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`], {});
+    await secretsIn(
+      ['build', '--cache-from', `type=${'a:a='.repeat(100_000)}`],
+      {},
+    );
 
     expect(performance.now() - started).toBeLessThan(2000);
   });
 
-  it('lists each value once', () => {
+  it('lists each value once', async () => {
     expect(
-      secretsIn(
+      await secretsIn(
         [
           'build',
           '--build-arg',
@@ -108,6 +113,18 @@ describe('scrub', () => {
       '[redacted] and [redacted] and [redacted]',
     );
   });
+
+  it.each(['abcdefgh', 'abcdefghi', 'abcdefghij', 'abcdefghijk'])(
+    'replaces the base64 form of %s with or without its padding',
+    (secret) => {
+      const base64 = Buffer.from(secret).toString('base64');
+      const bare = base64.replaceAll('=', '');
+
+      expect(scrub(`x ${base64} y ${bare} z`, [secret])).toBe(
+        'x [redacted] y [redacted] z',
+      );
+    },
+  );
 
   it('replaces each line of a multi-line secret and the base64 form', () => {
     const secret = 'first-line-secret\nsecond-line-secret';

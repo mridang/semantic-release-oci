@@ -5,8 +5,15 @@
  * @returns A new list of strings.
  */
 export function toList(value: string | readonly string[]): readonly string[] {
-  return typeof value === 'string'
-    ? // eslint-disable-next-line sonarjs/super-linear-regex -- the input is a short configuration string, so the whitespace runs are bounded
-      value.split(/\s*,\s*/).filter(Boolean)
-    : [...value];
+  if (typeof value !== 'string') {
+    return [...value];
+  }
+  // Whitespace around a comma is dropped; the ends of the string are kept.
+  const parts = value.split(',');
+  return parts
+    .map((part, index) => {
+      const head = index === 0 ? part : part.trimStart();
+      return index === parts.length - 1 ? head : head.trimEnd();
+    })
+    .filter(Boolean);
 }
