@@ -1,5 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
-import { maskArgs, scrub, secretsIn } from '../../src/lib/secrets.js';
+import {
+  maskArgs,
+  PUBLIC_KEY,
+  scrub,
+  secretsIn,
+  SENSITIVE_KEY,
+} from '../../src/lib/secrets.js';
 
 describe('secretsIn', () => {
   const env = { FROM_ENV_TOKEN: 'ENVSECRET99', VERSION: '1.2.3.4.5' };
@@ -168,5 +174,82 @@ describe('maskArgs', () => {
     expect(
       maskArgs(['login', 'h', '-u', 'someone', '--password-stdin']),
     ).toEqual(['login', 'h', '-u', '[redacted]', '--password-stdin']);
+  });
+});
+
+describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
+  const oldSensitive = new RegExp(
+    [
+      '(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?',
+      'api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)',
+    ].join('|'),
+    'i',
+  );
+  const oldPublic = new RegExp(
+    [
+      '(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha',
+      'git-?head|git-?commit|commit|revision|build-?date|build-?time',
+      'channel)(?:[^a-z]|$)',
+    ].join('|'),
+    'i',
+  );
+
+  it.each([
+    'NPM_TOKEN',
+    'secret_access_key',
+    'AUTHORS',
+    'VERSION',
+    'KEYBOARD',
+    'git-sha',
+    'GITHUB_TAG',
+    'build_date',
+    'password',
+    'passwd',
+    '',
+  ])('treats %j like the old patterns', (name) => {
+    expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+    expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
+  });
+
+  it('matches the old patterns on seeded random names', () => {
+    let state = 9;
+    const random = (): number => {
+      state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+      return state / 2 ** 32;
+    };
+    const pieces = [
+      'token',
+      'key',
+      'auth',
+      'cert',
+      'version',
+      'commit',
+      'git',
+      'sha',
+      'passw',
+      'or',
+      'd',
+      '-',
+      '_',
+      'x',
+      '1',
+      'api',
+      'build',
+      'date',
+    ];
+    for (let i = 0; i < 20_000; i += 1) {
+      let name = '';
+      for (let j = 0; j < 4; j += 1) {
+        name += pieces[Math.floor(random() * pieces.length)];
+      }
+      expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+      expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
+    }
+  });
+
+  it('agrees on a long adversarial input', () => {
+    const name = `${'token-'.repeat(30_000)}x`;
+    expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
+    expect(PUBLIC_KEY.test(name)).toBe(oldPublic.test(name));
   });
 });

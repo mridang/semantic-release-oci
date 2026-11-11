@@ -18,24 +18,50 @@ const MIN_SECRET_LENGTH = 4;
  */
 const MIN_DEFAULT_LENGTH = 6;
 
+/** A pattern for any of the keywords standing alone or set off by punctuation. */
+function wordIn(words: string[]): RegExp {
+  return new RegExp(`(?:^|[^a-z])(?:${words.join('|')})(?:[^a-z]|$)`, 'i');
+}
+
 /**
  * Key names (of build arguments and of `key=value` pairs) that carry a
  * credential. A name matches when the word stands alone or is set off by
  * punctuation, so `NPM_TOKEN` and `secret_access_key` match and `AUTHORS`,
  * `VERSION` and `KEYBOARD` do not.
  */
-const SENSITIVE_KEY =
-  // eslint-disable-next-line sonarjs/regex-complexity -- long explicit keyword list kept readable; splitting the pattern would obscure it
-  /(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?|api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)/i;
+export const SENSITIVE_KEY = wordIn([
+  'token',
+  'secret',
+  'passw(?:or)?d',
+  'credentials?',
+  'api-?key',
+  'access-?key',
+  'key',
+  'auth',
+  'cert',
+  'npmrc',
+]);
 
 /**
  * Names of build arguments that carry a known-public release variable, such
  * as a version, a commit or a build date. These are the only literal build
  * arguments that are not hidden from error text by default.
  */
-const PUBLIC_KEY =
-  // eslint-disable-next-line sonarjs/regex-complexity -- long explicit keyword list kept readable; splitting the pattern would obscure it
-  /(?:^|[^a-z])(?:version|major|minor|patch|git-?tag|git-?sha|git-?head|git-?commit|commit|revision|build-?date|build-?time|channel)(?:[^a-z]|$)/i;
+export const PUBLIC_KEY = wordIn([
+  'version',
+  'major',
+  'minor',
+  'patch',
+  'git-?tag',
+  'git-?sha',
+  'git-?head',
+  'git-?commit',
+  'commit',
+  'revision',
+  'build-?date',
+  'build-?time',
+  'channel',
+]);
 
 /**
  * Values too common to hide when only the place made them secret: hiding
