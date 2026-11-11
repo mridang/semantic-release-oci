@@ -135,7 +135,7 @@ export abstract class ImageStrategy {
    * returns a short label describing what was verified, for logging.
    * @returns A log label describing the verified target.
    */
-  abstract verifyTarget(): string;
+  abstract verifyTarget(): Promise<string>;
 
   /**
    * Runs the build, returning the captured image digest hex (or an empty

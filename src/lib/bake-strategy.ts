@@ -1,10 +1,10 @@
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
 import type { BakeSettings, OciConfig } from '../plugin-config.js';
 import type { Runner } from '../utils/exec.js';
+import { pathExists } from '../utils/fs.js';
 import { Bake } from './bake.js';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult } from './types.js';
@@ -44,7 +44,7 @@ export class BakeStrategy extends ImageStrategy {
    * exists.
    * @returns A log label naming the verified bake file.
    */
-  verifyTarget(): string {
+  async verifyTarget(): Promise<string> {
     const { bake, cwd } = this;
     if (!bake.group && !bake.target) {
       throw new SemanticReleaseError(
@@ -53,7 +53,7 @@ export class BakeStrategy extends ImageStrategy {
       );
     }
     const bakeFile = path.resolve(cwd, bake.file);
-    if (!fs.existsSync(bakeFile)) {
+    if (!(await pathExists(bakeFile))) {
       throw new SemanticReleaseError(
         `Bake file not found at ${bakeFile}`,
         'ENOENT',

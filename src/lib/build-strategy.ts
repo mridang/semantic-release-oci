@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
+import { pathExists } from '../utils/fs.js';
 import { Build } from './build.js';
 import { ImageStrategy } from './image-strategy.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
@@ -23,9 +23,9 @@ export class BuildStrategy extends ImageStrategy {
    * Verifies the configured Dockerfile exists.
    * @returns A log label naming the verified Dockerfile.
    */
-  verifyTarget(): string {
+  async verifyTarget(): Promise<string> {
     const dockerfile = path.resolve(this.cwd, this.config.getDockerFile());
-    if (!fs.existsSync(dockerfile)) {
+    if (!(await pathExists(dockerfile))) {
       throw new SemanticReleaseError(
         `Dockerfile not found at ${dockerfile}`,
         'ENOENT',

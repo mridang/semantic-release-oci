@@ -63,7 +63,7 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release' },
       });
 
-      expect(strategy.verifyTarget()).toBe(`bakeFile="${file}"`);
+      expect(await strategy.verifyTarget()).toBe(`bakeFile="${file}"`);
     });
 
     it('should throw EINVAL when neither group nor target is set', async () => {
@@ -71,7 +71,7 @@ describe('BakeStrategy', () => {
       await writeBakeFile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerBake: {} });
 
-      expect(() => strategy.verifyTarget()).toThrow(
+      await expect(strategy.verifyTarget()).rejects.toThrow(
         expect.objectContaining({ code: 'EINVAL' }),
       );
     });
@@ -82,7 +82,7 @@ describe('BakeStrategy', () => {
         dockerBake: { group: 'release' },
       });
 
-      expect(() => strategy.verifyTarget()).toThrow(
+      await expect(strategy.verifyTarget()).rejects.toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
     });

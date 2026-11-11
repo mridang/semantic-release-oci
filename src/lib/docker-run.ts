@@ -44,6 +44,7 @@ export interface DockerRunOptions {
  */
 function readText(cwd: string, file: string): string | undefined {
   try {
+    // eslint-disable-next-line n/no-sync -- secretsIn takes a synchronous reader and runs inside the synchronous argument scan, so the file has to be read synchronously
     return fs.readFileSync(path.resolve(cwd, file), 'utf8');
   } catch {
     return undefined;
@@ -57,7 +58,6 @@ function readText(cwd: string, file: string): string | undefined {
  * scrubbed parts only, because the error Node throws embeds the full command
  * line.
  */
-// eslint-disable-next-line unicorn/custom-error-definition -- the base class types name as SemanticReleaseError, so it keeps that name
 class DockerCommandError extends SemanticReleaseError {
   /** The exit status of the command, when it ran and failed. */
   readonly status: number | undefined;
@@ -72,6 +72,7 @@ class DockerCommandError extends SemanticReleaseError {
    * @param message - The scrubbed message.
    * @param source - The error that was thrown by the runner.
    */
+  // eslint-disable-next-line unicorn/custom-error-definition -- the base class sets name to SemanticReleaseError, which semantic-release prints, so it keeps that name
   constructor(message: string, source: unknown) {
     super(message, 'EDOCKER');
     this.status = statusOf(source);

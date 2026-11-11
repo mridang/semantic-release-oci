@@ -23,7 +23,7 @@ describe('selectStrategy', () => {
     'should return a BuildStrategy when dockerBake is %j',
     (dockerBake) => {
       const strategy = selectStrategy(
-        makeConfig(JSON.parse(JSON.stringify({ dockerBake }))),
+        makeConfig(structuredClone({ dockerBake })),
         stepContext('/work'),
       );
 

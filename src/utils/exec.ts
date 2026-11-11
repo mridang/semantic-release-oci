@@ -105,6 +105,7 @@ export const run: Runner = (file, args, options = {}) =>
         timeout: options.timeout,
         encoding: 'utf8',
       },
+      // eslint-disable-next-line promise/prefer-await-to-callbacks -- the callback form of execFile is kept so the child stdin can be written and the runner stays callback-compatible with the mocked execFile
       (error, stdout, stderr) => {
         if (error === null) {
           resolve(stdout);

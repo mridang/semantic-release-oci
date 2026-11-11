@@ -56,11 +56,14 @@ function stateKey(
  * @param cwd - Directory the release runs in.
  * @returns The resolved image name and repository path.
  */
-function resolveImage(
+async function resolveImage(
   config: OciConfig,
   cwd: string,
-): { readonly imageName: string | undefined; readonly repo: string } {
-  const pkg = readPkg(cwd);
+): Promise<{
+  readonly imageName: string | undefined;
+  readonly repo: string;
+}> {
+  const pkg = await readPkg(cwd);
   const parsed = pkg?.name ? parsePkgName(pkg.name) : null;
   const imageName = config.getDockerImage() ?? parsed?.name ?? undefined;
   const project = config.getDockerProject() ?? parsed?.scope ?? undefined;
@@ -88,7 +91,7 @@ export async function verifyConditions(
 
   await strategy.verifyDocker();
 
-  const { imageName } = resolveImage(config, strategy.cwd);
+  const { imageName } = await resolveImage(config, strategy.cwd);
 
   if (!imageName) {
     throw new SemanticReleaseError(
@@ -97,7 +100,7 @@ export async function verifyConditions(
     );
   }
 
-  const verifiedTarget = strategy.verifyTarget();
+  const verifiedTarget = await strategy.verifyTarget();
 
   await strategy.login();
 
@@ -116,7 +119,7 @@ export async function prepare(
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
-  const { repo } = resolveImage(config, strategy.cwd);
+  const { repo } = await resolveImage(config, strategy.cwd);
   const key = stateKey(pluginConfig, context, strategy.cwd, repo);
   // A build that fails must not leave the previous one to be published.
   buildStates.set(key, undefined);
@@ -174,7 +177,7 @@ export async function publish(
 ): Promise<void> {
   const config = new OciConfig(pluginConfig, context.env);
   const strategy = selectStrategy(config, context);
-  const { repo } = resolveImage(config, strategy.cwd);
+  const { repo } = await resolveImage(config, strategy.cwd);
   const key = stateKey(pluginConfig, context, strategy.cwd, repo);
 
   if (!buildStates.has(key)) {

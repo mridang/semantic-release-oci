@@ -17,7 +17,7 @@ import { stepContext } from '../utils/context.js';
  */
 const dockerAvailable: boolean = (() => {
   try {
-    // eslint-disable-next-line n/no-sync -- bootstrap probe: it decides at load time whether the suite is defined, so it must be synchronous
+    // eslint-disable-next-line n/no-sync, sonarjs/no-os-command-from-path -- bootstrap probe: it decides at load time whether the suite is defined, so it must be synchronous, and docker is looked up on PATH by design
     execSync('docker buildx bake --help', { stdio: 'ignore' });
     return true;
   } catch {

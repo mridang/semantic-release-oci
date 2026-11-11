@@ -56,7 +56,7 @@ describe('BuildStrategy', () => {
       await writeDockerfile(tmpDir);
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
-      expect(strategy.verifyTarget()).toBe(
+      expect(await strategy.verifyTarget()).toBe(
         `dockerfile="${path.resolve(tmpDir, 'Dockerfile')}"`,
       );
     });
@@ -65,7 +65,7 @@ describe('BuildStrategy', () => {
       const tmpDir = makeTempDir();
       const { strategy } = makeStrategy(tmpDir, { dockerImage: 'my-app' });
 
-      expect(() => strategy.verifyTarget()).toThrow(
+      await expect(strategy.verifyTarget()).rejects.toThrow(
         expect.objectContaining({ code: 'ENOENT' }),
       );
     });
@@ -82,7 +82,7 @@ describe('BuildStrategy', () => {
         dockerFile: 'build/Dockerfile',
       });
 
-      expect(strategy.verifyTarget()).toBe(
+      expect(await strategy.verifyTarget()).toBe(
         `dockerfile="${path.resolve(tmpDir, 'build/Dockerfile')}"`,
       );
     });

@@ -31,13 +31,13 @@ describe('readPkg', () => {
       JSON.stringify({ name: 'my-app' }),
     );
 
-    expect(readPkg(tmpDir)).toEqual({ name: 'my-app' });
+    expect(await readPkg(tmpDir)).toEqual({ name: 'my-app' });
   });
 
-  it('should return null when package.json is absent', () => {
+  it('should return null when package.json is absent', async () => {
     const tmpDir = makeTempDir();
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 
   it('should return null when package.json is not an object', async () => {
@@ -47,7 +47,7 @@ describe('readPkg', () => {
       '"just a string"',
     );
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 
   it('should ignore a name that is not a string', async () => {
@@ -57,7 +57,9 @@ describe('readPkg', () => {
       '{ "name": 7 }',
     );
 
-    expect(readPkg(tmpDir)?.name).toBeUndefined();
+    const pkg = await readPkg(tmpDir);
+
+    expect(pkg?.name).toBeUndefined();
   });
 
   it('should return null when package.json is malformed', async () => {
@@ -67,7 +69,7 @@ describe('readPkg', () => {
       '{ not valid json',
     );
 
-    expect(readPkg(tmpDir)).toBeNull();
+    expect(await readPkg(tmpDir)).toBeNull();
   });
 });
 

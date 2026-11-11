@@ -20,6 +20,7 @@ describe('messageOf', () => {
 
   it('describes an error without a message by its code', () => {
     expect(
+      // eslint-disable-next-line unicorn/error-message -- the case under test is an error with an empty message
       messageOf(Object.assign(new Error(''), { code: 'ECONNREFUSED' })),
     ).toBe('ECONNREFUSED');
   });
@@ -28,12 +29,14 @@ describe('messageOf', () => {
     const inner = Object.assign(new Error('connect ECONNREFUSED ::1:443'), {
       code: 'ECONNREFUSED',
     });
+    // eslint-disable-next-line unicorn/error-message -- the case under test is an error with an empty message
     expect(messageOf(new AggregateError([inner, new Error('other')], ''))).toBe(
       'connect ECONNREFUSED ::1:443',
     );
   });
 
   it('prefers the code of an aggregate error over its inner errors', () => {
+    // eslint-disable-next-line unicorn/error-message -- the case under test is an error with an empty message
     const error = Object.assign(new AggregateError([new Error('inner')], ''), {
       code: 'ECONNREFUSED',
     });
@@ -41,7 +44,9 @@ describe('messageOf', () => {
   });
 
   it('falls back to the name of an error with nothing else to say', () => {
+    // eslint-disable-next-line unicorn/error-message -- the case under test is an error with an empty message
     expect(messageOf(new AggregateError([], ''))).toBe('AggregateError');
+    // eslint-disable-next-line unicorn/error-message -- the case under test is an error with an empty message
     expect(messageOf(new TypeError(''))).toBe('TypeError');
   });
 

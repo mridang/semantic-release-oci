@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isRecord, stringAt } from '../utils/object.js';
 
@@ -30,11 +30,12 @@ export function parsePkgName(pkgname: string): {
  * @param cwd - Directory to read `package.json` from.
  * @returns The parsed package, or `null` when absent or unparseable.
  */
-export function readPkg(cwd: string): { readonly name?: string } | null {
+export async function readPkg(
+  cwd: string,
+): Promise<{ readonly name?: string } | null> {
   const pkgPath = path.join(cwd, 'package.json');
-  if (!fs.existsSync(pkgPath)) return null;
   try {
-    const pkg: unknown = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    const pkg: unknown = JSON.parse(await readFile(pkgPath, 'utf8'));
     return isRecord(pkg) ? { name: stringAt(pkg, 'name') } : null;
   } catch {
     return null;

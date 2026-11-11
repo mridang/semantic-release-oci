@@ -15,6 +15,13 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "keywords": [
     "semver",
     "nodejs",
@@ -33,6 +40,7 @@
   "license": "Apache-2.0",
   "description": "Semantic Release plugin that builds, tags, and pushes Docker/OCI images to a container registry",
   "private": false,
+  "sideEffects": true,
   "engines": {
     "node": ">=22.0.0"
   },
