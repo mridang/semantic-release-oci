@@ -57,6 +57,7 @@ function readText(cwd: string, file: string): string | undefined {
  * scrubbed parts only, because the error Node throws embeds the full command
  * line.
  */
+// eslint-disable-next-line unicorn/custom-error-definition -- the base class types name as SemanticReleaseError, so it keeps that name
 class DockerCommandError extends SemanticReleaseError {
   /** The exit status of the command, when it ran and failed. */
   readonly status: number | undefined;

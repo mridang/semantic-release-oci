@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import * as actions from '@actions/core';
+import { setOutput } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
 import type {
   PrepareContext,
@@ -202,10 +202,10 @@ export async function publish(
   published.add(key);
 
   try {
-    actions.setOutput('docker_image', state.repo);
-    actions.setOutput('docker_image_build_id', state.buildId);
-    actions.setOutput('docker_image_sha_short', state.sha);
-    actions.setOutput('docker_image_sha_long', state.sha256);
+    setOutput('docker_image', state.repo);
+    setOutput('docker_image_build_id', state.buildId);
+    setOutput('docker_image_sha_short', state.sha);
+    setOutput('docker_image_sha_long', state.sha256);
   } catch {
     /* ignored outside GitHub Actions */
   }
