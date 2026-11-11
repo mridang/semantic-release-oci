@@ -19,7 +19,7 @@ describe('selectStrategy', () => {
     expect(strategy).toBeInstanceOf(BakeStrategy);
   });
 
-  it.each([undefined, null, false, 0, ''])(
+  it.each<OciPluginConfig['dockerBake']>([undefined, null, false, 0, ''])(
     'should return a BuildStrategy when dockerBake is %j',
     (dockerBake) => {
       const strategy = selectStrategy(
