@@ -2,7 +2,8 @@ import { describe, it, expect } from '@jest/globals';
 import { selectStrategy } from '../../src/lib/strategy.js';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
-import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
+import type { OciPluginConfig } from '../../src/plugin-config.js';
+import { OciConfig } from '../../src/plugin-config.js';
 import { stepContext } from '../utils/context.js';
 
 function makeConfig(overrides: OciPluginConfig = {}): OciConfig {

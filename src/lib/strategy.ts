@@ -1,9 +1,9 @@
 import type { VerifyConditionsContext } from 'semantic-release';
 import type { Runner } from '../utils/exec.js';
-import { OciConfig } from '../plugin-config.js';
+import type { OciConfig } from '../plugin-config.js';
 import { BuildStrategy } from './build-strategy.js';
 import { BakeStrategy } from './bake-strategy.js';
-import { ImageStrategy } from './image-strategy.js';
+import type { ImageStrategy } from './image-strategy.js';
 
 /**
  * Selects the build strategy for the given configuration: bake mode when

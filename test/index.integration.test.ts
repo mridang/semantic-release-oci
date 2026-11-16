@@ -12,7 +12,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
+import type { StartedTestContainer } from 'testcontainers';
+import { GenericContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
 import type { OciPluginConfig } from '../src/plugin-config.js';
 import { stepContext } from './utils/context.js';
@@ -145,8 +146,8 @@ describe('semantic-release-oci (integration, real Docker)', () => {
     }
 
     expect(stringAt(parsed, 'name')).toBe('integration-test');
-    expect(parsed['tags']).toContain('2.0.0');
-    expect(parsed['tags']).toContain('latest');
+    expect(parsed.tags).toContain('2.0.0');
+    expect(parsed.tags).toContain('latest');
   }, 180_000);
 
   it('publish with dockerAutoClean removes local images', async () => {

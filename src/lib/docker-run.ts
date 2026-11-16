@@ -113,7 +113,7 @@ function detailsOf(error: unknown): readonly string[] {
 export function dockerRun(options: DockerRunOptions): DockerRun {
   const run = options.run ?? defaultRun;
   const readFile =
-    options.readFile ?? ((file: string) => readText(options.cwd, file));
+    options.readFile ?? (async (file: string) => readText(options.cwd, file));
   const env = { ...process.env, ...options.env };
   return async (args, input) => {
     const nul = args.findIndex((arg) => arg.includes('\0'));
@@ -123,7 +123,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     const secrets = await secretsIn(args, env, readFile, input);
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
-    if (env['GITHUB_ACTIONS'] === 'true') {
+    if (env.GITHUB_ACTIONS === 'true') {
       for (const secret of secrets) setSecret(secret);
     }
     const shown = scrub(['docker', ...maskArgs(args)].join(' '), secrets);

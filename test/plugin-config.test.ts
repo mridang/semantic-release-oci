@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import { OciConfig, OciPluginConfig } from '../src/plugin-config.js';
+import type { OciPluginConfig } from '../src/plugin-config.js';
+import { OciConfig } from '../src/plugin-config.js';
 
 function makeConfig(
   overrides: OciPluginConfig = {},
@@ -47,7 +48,9 @@ describe('OciConfig', () => {
     it.each(['null', 'false'])(
       'should treat dockerBake: %s from a plain config file as not configured',
       (raw) => {
-        const config = makeConfig(JSON.parse(`{ "dockerBake": ${raw} }`));
+        const config = makeConfig(
+          JSON.parse(`{ "dockerBake": ${raw} }`) as OciPluginConfig,
+        );
         expect(config.getDockerBake()).toBeUndefined();
       },
     );

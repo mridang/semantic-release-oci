@@ -167,7 +167,7 @@ export type FileReader = (
  * @param readFile - Reads a file, or returns undefined when it cannot.
  * @returns The values the mount will carry.
  */
-function mountSecrets(
+async function mountSecrets(
   spec: string,
   env: Readonly<Record<string, string | undefined>>,
   readFile: FileReader,

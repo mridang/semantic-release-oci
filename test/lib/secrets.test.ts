@@ -39,7 +39,7 @@ describe('secretsIn', () => {
       ['KEY123abc'],
     ],
     [
-      ['build', '--cache-to', `type=registry,ref=u:PASS1234${'@'}host/x`],
+      ['build', '--cache-to', `type=registry,ref=u:PASS1234@host/x`],
       ['PASS1234'],
     ],
     [

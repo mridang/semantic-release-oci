@@ -163,7 +163,7 @@ export class Build {
     const digest = output
       .split('\n')
       .reduce<string>(
-        (found, line) => SHA_REGEX.exec(line)?.groups?.['sha'] ?? found,
+        (found, line) => SHA_REGEX.exec(line)?.groups?.sha ?? found,
         '',
       );
     return new Build(docker, repository, id, digest);

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
-import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
+import type { OciPluginConfig } from '../../src/plugin-config.js';
+import { OciConfig } from '../../src/plugin-config.js';
 import type { BuildParams, BuildState } from '../../src/lib/types.js';
 import type { PrepareContext, VerifyConditionsContext } from 'semantic-release';
 import {
