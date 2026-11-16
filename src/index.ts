@@ -128,7 +128,7 @@ export async function prepare(
 
   const { nextRelease, logger } = context;
   const [major, minor = '', patch = ''] = nextRelease.version.split('.');
-  const vars = {
+  const variables = {
     version: nextRelease.version,
     major,
     minor,
@@ -146,7 +146,7 @@ export async function prepare(
   const { sha256, tags } = await strategy.build({
     repo,
     tagTemplates: config.getDockerTags(),
-    vars,
+    vars: variables,
     buildId,
     isDryRun,
   });

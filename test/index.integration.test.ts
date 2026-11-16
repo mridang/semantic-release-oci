@@ -18,6 +18,8 @@ import type { OciPluginConfig } from '../src/plugin-config.js';
 import { stepContext } from './utils/context.js';
 import { isRecord, stringAt } from '../src/utils/object.js';
 
+const LISTENING_ON = /listening on/;
+
 const execAsync = promisify(exec);
 
 async function requireDocker(): Promise<void> {
@@ -28,7 +30,7 @@ async function requireDocker(): Promise<void> {
   }
 }
 
-async function makeTempDir(): Promise<string> {
+async function makeTemporaryDir(): Promise<string> {
   return fs.promises.mkdtemp(
     path.join(os.tmpdir(), 'semantic-release-oci-it-'),
   );
@@ -54,7 +56,7 @@ describe('semantic-release-oci (integration, real Docker)', () => {
 
     registry = await new GenericContainer('registry:2')
       .withExposedPorts(5000)
-      .withWaitStrategy(Wait.forLogMessage(/listening on/))
+      .withWaitStrategy(Wait.forLogMessage(LISTENING_ON))
       .start();
 
     registryHost = `localhost:${registry.getMappedPort(5000)}`;
@@ -67,7 +69,7 @@ describe('semantic-release-oci (integration, real Docker)', () => {
   });
 
   beforeEach(async () => {
-    workdir = await makeTempDir();
+    workdir = await makeTemporaryDir();
     await fs.promises.copyFile(
       new URL('fixture/Dockerfile', import.meta.url),
       path.join(workdir, 'Dockerfile'),

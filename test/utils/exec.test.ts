@@ -160,7 +160,7 @@ describe('run', () => {
 
     const error = await rejection(run('docker', ['pull']));
     expect(error).toEqual(expect.objectContaining({ status: 2 }));
-    expect(error).toHaveProperty('code', undefined);
+    expect(error).toHaveProperty('code');
   });
 
   it('reports a command killed after the timeout as ETIMEDOUT', async () => {
@@ -187,7 +187,7 @@ describe('run', () => {
 
     const error = await rejection(run('docker', ['build']));
     expect(error).toEqual(expect.objectContaining({ signal: 'SIGKILL' }));
-    expect(error).toHaveProperty('code', undefined);
+    expect(error).toHaveProperty('code');
   });
 
   it('redacts credentials in the message of the error', async () => {
@@ -205,7 +205,7 @@ describe('run', () => {
   });
 
   it('describes output that is not text as empty', async () => {
-    finishWith(new Error('failed'), Buffer.from('x'), undefined);
+    finishWith(new Error('failed'), Buffer.from('x'));
 
     expect(await rejection(run('docker', ['pull']))).toEqual(
       expect.objectContaining({ stdout: '', stderr: '' }),

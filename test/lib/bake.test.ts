@@ -3,17 +3,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Bake, parseBakeDigest, type BakeOptions } from '../../src/lib/bake.js';
-import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
+import {
+  makeTemporaryDirectory as makeTemporaryDir,
+  removeTemporaryDirectories,
+} from '../utils/tmpdir.js';
 import { dockerSpy, runnerOf } from '../utils/runner.js';
 import { dockerRun } from '../../src/lib/docker-run.js';
 
-afterEach(removeTempDirs);
+afterEach(removeTemporaryDirectories);
 
 const METADATA = path.join(os.tmpdir(), 'meta.json');
 
 describe('parseBakeDigest', () => {
   it('should return the named target digest without the sha256 prefix', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(
       file,
@@ -27,7 +30,7 @@ describe('parseBakeDigest', () => {
   });
 
   it('should fall back to the first target with a digest for wildcard', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(
       file,
@@ -48,7 +51,7 @@ describe('parseBakeDigest', () => {
       { image: { 'containerimage.digest': 7 } },
     ],
   ])('should return empty string for %s', async (_name, metadata) => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(file, JSON.stringify(metadata));
 
@@ -57,7 +60,7 @@ describe('parseBakeDigest', () => {
   });
 
   it('should not treat an inherited property as the preferred target', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(
       file,
@@ -72,7 +75,7 @@ describe('parseBakeDigest', () => {
   });
 
   it('should return empty string when the metadata is not an object', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(file, '["sha256:abc"]');
 
@@ -80,7 +83,7 @@ describe('parseBakeDigest', () => {
   });
 
   it('should return empty string on malformed metadata', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     const file = path.join(tmpDir, 'meta.json');
     await fs.promises.writeFile(file, 'not json');
 
@@ -160,7 +163,7 @@ describe('Bake', () => {
   });
 
   it('returns the digest bake recorded and removes the metadata file', async () => {
-    const file = path.join(await makeTempDir(), 'meta.json');
+    const file = path.join(await makeTemporaryDir(), 'meta.json');
     spy.mockImplementation(async () => {
       await fs.promises.writeFile(
         file,
@@ -178,7 +181,7 @@ describe('Bake', () => {
   });
 
   it('removes the metadata file when the bake fails', async () => {
-    const file = path.join(await makeTempDir(), 'meta.json');
+    const file = path.join(await makeTemporaryDir(), 'meta.json');
     await fs.promises.writeFile(file, '{}');
     spy.mockImplementation(() => {
       throw new Error('boom');

@@ -60,18 +60,20 @@ export abstract class ImageStrategy {
    * from the provided variables map. Unknown variables resolve to the
    * empty string.
    * @param template - Template string containing `{{key}}` placeholders.
-   * @param vars - Key-value map of replacement values.
+   * @param variables - Key-value map of replacement values.
    * @returns The rendered string.
    */
   protected renderTemplate(
     template: string,
-    vars: Readonly<Record<string, string | number | undefined>>,
+    variables: Readonly<Record<string, string | number | undefined>>,
   ): string {
     return template.replaceAll(
       /\{\{(\w+)\}\}/g,
       (_match: string, key: string): string => {
         // Own keys only: `{{constructor}}` must not reach Object.prototype.
-        const value = Object.hasOwn(vars, key) ? vars[key] : undefined;
+        const value = Object.hasOwn(variables, key)
+          ? variables[key]
+          : undefined;
         return value === undefined ? '' : String(value);
       },
     );
@@ -81,15 +83,15 @@ export abstract class ImageStrategy {
    * Renders a list of tag templates, dropping any that resolve to an
    * empty string and any that repeat an earlier tag.
    * @param templates - Tag template strings.
-   * @param vars - Key-value map of replacement values.
+   * @param variables - Key-value map of replacement values.
    * @returns The rendered, non-empty tags.
    */
   protected renderTags(
     templates: readonly string[],
-    vars: Readonly<Record<string, string | number | undefined>>,
+    variables: Readonly<Record<string, string | number | undefined>>,
   ): readonly string[] {
     const rendered = templates
-      .map((template) => this.renderTemplate(template, vars))
+      .map((template) => this.renderTemplate(template, variables))
       .filter(Boolean);
     return [...new Set(rendered)];
   }

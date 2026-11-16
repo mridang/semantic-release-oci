@@ -14,7 +14,27 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
-import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
+import {
+  makeTemporaryDirectory as makeTemporaryDir,
+  removeTemporaryDirectories,
+} from '../utils/tmpdir.js';
+
+const SECRET_MOUNT_REDACTED_LINE =
+  /\nsecretmount=\[redacted\] file=\[redacted\]$/;
+const FILE_REDACTED = /file=\[redacted\]$/;
+const UNREDACTED_FILE_SECRET = /file=FileSecretVal888$/;
+const REDACTED_PASSWORD_LINE = /\nunauthorized: bad password \[redacted\]$/;
+const REDACTED_PAT_LINE = /\npat=\[redacted\] ver=22\.1\.0$/;
+const REDACTED_TOKEN_LINE = /\ntok=\[redacted\] other=cd34$/;
+const REDACTED_USING_LINE = /using \[redacted\]" && false$/;
+const EXPORTING_LINE = /\nexporting sha256:abcdef0123 as 1\.2\.3$/;
+const REDACTED_BUILD_LOG_LINES =
+  /\n#6 0\.1 \[redacted\]\n#6 0\.1 \[redacted\]\n#6 0\.2 \[redacted\]\n#6 0\.3 \[redacted\]$/;
+const REDACTED_TIMEOUT_LOG =
+  /\nETIMEDOUT\n#4 \[1\/2\] RUN sleep 9999 using \[redacted\]$/;
+const REDACTED_BUILD_COMMAND =
+  /^Command failed: docker build --build-arg TOKEN=\[redacted\]$/;
+const REDACTED_PLAIN_LINE = /\nplain \[redacted\]$/;
 
 const spy = dockerSpy();
 
@@ -38,7 +58,7 @@ function setup(
   };
 }
 
-afterEach(removeTempDirs);
+afterEach(removeTemporaryDirectories);
 
 beforeEach(() => {
   spy.mockReset();
@@ -261,11 +281,11 @@ describe('dockerRun', () => {
           'id=a,env=MYSECRET',
           '--secret=id=b,src=tok.txt',
         ]),
-      ).rejects.toThrow(/\nsecretmount=\[redacted\] file=\[redacted\]$/);
+      ).rejects.toThrow(SECRET_MOUNT_REDACTED_LINE);
     });
 
     it('reads --secret files relative to the working directory by default', async () => {
-      const dir = await makeTempDir();
+      const dir = await makeTemporaryDir();
       await fs.promises.writeFile(
         path.join(dir, 'tok.txt'),
         'FileSecretVal888',
@@ -283,10 +303,10 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['build', '--secret', 'id=b,src=tok.txt']),
-      ).rejects.toThrow(/file=\[redacted\]$/);
+      ).rejects.toThrow(FILE_REDACTED);
       await expect(
         docker(['build', '--secret', 'id=b,src=missing']),
-      ).rejects.toThrow(/file=FileSecretVal888$/);
+      ).rejects.toThrow(UNREDACTED_FILE_SECRET);
     });
 
     it('scrubs the text sent on stdin', async () => {
@@ -297,7 +317,7 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['login', '-u', 'user'], 'registry-password'),
-      ).rejects.toThrow(/\nunauthorized: bad password \[redacted\]$/);
+      ).rejects.toThrow(REDACTED_PASSWORD_LINE);
     });
 
     it('scrubs a literal build arg whatever its name, but not public ones', async () => {
@@ -314,7 +334,7 @@ describe('dockerRun', () => {
           '--build-arg',
           'NODE_VERSION=22.1.0',
         ]),
-      ).rejects.toThrow(/\npat=\[redacted\] ver=22\.1\.0$/);
+      ).rejects.toThrow(REDACTED_PAT_LINE);
     });
 
     it('scrubs a short value only when its name says it is a credential', async () => {
@@ -331,7 +351,7 @@ describe('dockerRun', () => {
           '--build-arg',
           'OTHER=cd34',
         ]),
-      ).rejects.toThrow(/\ntok=\[redacted\] other=cd34$/);
+      ).rejects.toThrow(REDACTED_TOKEN_LINE);
     });
 
     it('scrubs a build arg that docker takes from the environment', async () => {
@@ -342,7 +362,7 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['build', '--build-arg', 'NPM_TOKEN']),
-      ).rejects.toThrow(/using \[redacted\]" && false$/);
+      ).rejects.toThrow(REDACTED_USING_LINE);
     });
 
     it('keeps public release variables and common words readable', async () => {
@@ -361,7 +381,7 @@ describe('dockerRun', () => {
           '--build-arg',
           'DEBUG=production',
         ]),
-      ).rejects.toThrow(/\nexporting sha256:abcdef0123 as 1\.2\.3$/);
+      ).rejects.toThrow(EXPORTING_LINE);
     });
 
     it('scrubs each line of a multi-line secret, and its base64 and URL-encoded forms', async () => {
@@ -380,9 +400,7 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['build', '--build-arg', `PRIVATE_KEY=${pem}`]),
-      ).rejects.toThrow(
-        /\n#6 0\.1 \[redacted\]\n#6 0\.1 \[redacted\]\n#6 0\.2 \[redacted\]\n#6 0\.3 \[redacted\]$/,
-      );
+      ).rejects.toThrow(REDACTED_BUILD_LOG_LINES);
     });
 
     it('fails with an EDOCKER error that keeps the status, signal and cause', async () => {
@@ -422,9 +440,7 @@ describe('dockerRun', () => {
         expect.objectContaining({
           code: 'EDOCKER',
           errno: 'ETIMEDOUT',
-          message: expect.stringMatching(
-            /\nETIMEDOUT\n#4 \[1\/2\] RUN sleep 9999 using \[redacted\]$/,
-          ),
+          message: expect.stringMatching(REDACTED_TIMEOUT_LOG),
         }),
       );
     });
@@ -457,9 +473,7 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['build', '--build-arg', 'TOKEN=s3cr3t']),
-      ).rejects.toThrow(
-        /^Command failed: docker build --build-arg TOKEN=\[redacted\]$/,
-      );
+      ).rejects.toThrow(REDACTED_BUILD_COMMAND);
     });
 
     it('scrubs a thrown non-error', async () => {
@@ -470,7 +484,7 @@ describe('dockerRun', () => {
 
       await expect(
         docker(['build', '--build-arg', 'TOKEN=s3cr3t']),
-      ).rejects.toThrow(/\nplain \[redacted\]$/);
+      ).rejects.toThrow(REDACTED_PLAIN_LINE);
     });
   });
 });

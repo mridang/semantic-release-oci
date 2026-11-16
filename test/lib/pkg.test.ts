@@ -1,10 +1,13 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeTempDir, removeTempDirs } from '../utils/tmpdir.js';
+import {
+  makeTemporaryDirectory as makeTemporaryDir,
+  removeTemporaryDirectories,
+} from '../utils/tmpdir.js';
 import { parsePkgName, readPkg, buildImageRepo } from '../../src/lib/pkg.js';
 
-afterEach(removeTempDirs);
+afterEach(removeTemporaryDirectories);
 
 describe('parsePkgName', () => {
   it('should split a scoped package name into scope and name', () => {
@@ -25,7 +28,7 @@ describe('parsePkgName', () => {
 
 describe('readPkg', () => {
   it('should read and parse package.json from the directory', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       JSON.stringify({ name: 'my-app' }),
@@ -35,13 +38,13 @@ describe('readPkg', () => {
   });
 
   it('should return null when package.json is absent', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
 
     expect(await readPkg(tmpDir)).toBeNull();
   });
 
   it('should return null when package.json is not an object', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '"just a string"',
@@ -51,7 +54,7 @@ describe('readPkg', () => {
   });
 
   it('should ignore a name that is not a string', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '{ "name": 7 }',
@@ -63,7 +66,7 @@ describe('readPkg', () => {
   });
 
   it('should return null when package.json is malformed', async () => {
-    const tmpDir = await makeTempDir();
+    const tmpDir = await makeTemporaryDir();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '{ not valid json',
