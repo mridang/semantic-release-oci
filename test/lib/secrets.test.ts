@@ -237,9 +237,9 @@ describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
       'build',
       'date',
     ];
-    for (let i = 0; i < 20_000; i += 1) {
+    for (let index = 0; index < 20_000; index += 1) {
       let name = '';
-      for (let j = 0; j < 4; j += 1) {
+      for (let index = 0; index < 4; index += 1) {
         name += pieces[Math.floor(random() * pieces.length)];
       }
       expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));

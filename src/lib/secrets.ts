@@ -3,6 +3,14 @@ import { redactSecrets } from '../utils/redact.js';
 /**
  * What a secret is replaced with.
  */
+const BUILD_ARG_OR_SET_ASSIGNMENT = /^(--build-arg|--set)=([\s\S]*)$/;
+const BUILD_ARG_NAME = /^[^=]*\.args\.([^=]*)$/;
+const CREDENTIAL_IN_URL =
+  /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i;
+const CACHE_FLAG_WITH_VALUE = /^--cache-(?:from|to)=/;
+const SECRET_FLAG = /^--secret=(.*)$/;
+const LINE_BREAK = /\r?\n/;
+
 const MASK = '[redacted]';
 
 /**
@@ -116,7 +124,7 @@ function assignmentOf(
   arg: string,
   previous: string | undefined,
 ): Assignment | undefined {
-  const joined = /^(--build-arg|--set)=([\s\S]*)$/.exec(arg);
+  const joined = BUILD_ARG_OR_SET_ASSIGNMENT.exec(arg);
   const flag = joined?.[1] ?? previous;
   const payload = joined?.[2] ?? arg;
   const split = payload.indexOf('=');
@@ -125,7 +133,7 @@ function assignmentOf(
   if (flag === '--build-arg') {
     return { payload, key: name, value };
   }
-  const built = /^[^=]*\.args\.([^=]*)$/.exec(name);
+  const built = BUILD_ARG_NAME.exec(name);
   return flag === '--set' && split >= 0 && built?.[1] !== undefined
     ? { payload, key: built[1], value }
     : undefined;
@@ -143,9 +151,7 @@ function cachePassword(piece: string): string | undefined {
   if (at === -1) {
     return undefined;
   }
-  return /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i.exec(
-    piece.slice(0, at),
-  )?.[1];
+  return CREDENTIAL_IN_URL.exec(piece.slice(0, at))?.[1];
 }
 
 /** Reads a file, or gives undefined when it cannot be read. */
@@ -167,7 +173,7 @@ function mountSecrets(
   readFile: FileReader,
 ): Promise<readonly (string | undefined)[]> {
   return Promise.all(
-    spec.split(',').map(async (piece) => {
+    spec.split(',').map(async (piece): Promise<string | undefined> => {
       const at = piece.indexOf('=');
       const name = piece.slice(0, at);
       const value = piece.slice(at + 1);
@@ -215,12 +221,11 @@ async function embeddedSecrets(
   });
   const cache =
     (previous !== undefined && CACHE_FLAG.test(previous)) ||
-    /^--cache-(?:from|to)=/.test(arg);
+    CACHE_FLAG_WITH_VALUE.test(arg);
   const passwords = cache ? pieces.map((piece) => cachePassword(piece)) : [];
   const flagValue =
     previous !== undefined && SENSITIVE_FLAG.test(previous) ? [arg] : [];
-  const mount =
-    previous === '--secret' ? arg : /^--secret=(.*)$/.exec(arg)?.[1];
+  const mount = previous === '--secret' ? arg : SECRET_FLAG.exec(arg)?.[1];
   const mounted =
     mount === undefined ? [] : await mountSecrets(mount, env, readFile);
   return [...pairs, ...passwords, ...flagValue, ...mounted];
@@ -308,7 +313,10 @@ export async function secretsIn(
  * @returns The distinct texts to hide.
  */
 function formsOf(secret: string): readonly string[] {
-  const parts = [secret, ...secret.split(/\r?\n/).map((line) => line.trim())];
+  const parts = [
+    secret,
+    ...secret.split(LINE_BREAK).map((line) => line.trim()),
+  ];
   const forms = parts.flatMap((part) => {
     const base64 = Buffer.from(part).toString('base64');
 

@@ -124,7 +124,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env['GITHUB_ACTIONS'] === 'true') {
-      secrets.forEach((secret) => setSecret(secret));
+      for (const secret of secrets) setSecret(secret);
     }
     const shown = scrub(['docker', ...maskArgs(args)].join(' '), secrets);
     options.logger.log(`Executing: ${shown}`);

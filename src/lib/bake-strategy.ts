@@ -77,12 +77,9 @@ export class BakeStrategy extends ImageStrategy {
 
     const dockerArgs = Object.entries(config.getDockerArgs());
 
-    dockerArgs
-      .filter(([, value]) => value === true)
-      .forEach(([key]) =>
-        context.logger.log(
-          `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
-        ),
+    for (const [key] of dockerArgs.filter(([, value]) => value === true))
+      context.logger.log(
+        `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
       );
 
     const baked = await new Bake(docker, {

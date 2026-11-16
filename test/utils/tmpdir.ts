@@ -11,19 +11,19 @@ const root = await mkdtemp(path.join(tmpdir(), 'semantic-release-oci-'));
 process.on('exit', () => rmSync(root, { recursive: true, force: true }));
 
 /**
- * Create a temporary directory that {@link removeTempDirs} deletes. Register
- * `afterEach(removeTempDirs)` in the test file, so the directory is removed
+ * Create a temporary directory that {@link removeTemporaryDirectories} deletes. Register
+ * `afterEach(removeTemporaryDirectories)` in the test file, so the directory is removed
  * even when an assertion fails.
  * @returns The directory path.
  */
-export async function makeTempDir(): Promise<string> {
+export async function makeTemporaryDirectory(): Promise<string> {
   return mkdtemp(path.join(root, 'test-'));
 }
 
 /**
- * Remove every directory made by {@link makeTempDir} so far.
+ * Remove every directory made by {@link makeTemporaryDirectory} so far.
  */
-export async function removeTempDirs(): Promise<void> {
+export async function removeTemporaryDirectories(): Promise<void> {
   const names = await readdir(root);
   await Promise.all(
     names.map((name) =>

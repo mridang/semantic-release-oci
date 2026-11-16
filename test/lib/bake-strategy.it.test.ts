@@ -14,6 +14,8 @@ import { execAsync } from '../utils/exec.js';
  * or buildx is absent (e.g. CI runners without a Docker daemon) instead
  * of failing.
  */
+const SHA256_HEX = /^[a-f0-9]{64}$/;
+
 const dockerAvailable: boolean = await (async () => {
   try {
     await execAsync('docker buildx bake --help');
@@ -113,7 +115,7 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     } satisfies BuildParams);
 
     expect(result.tags).toEqual(['1.2.3', 'latest']);
-    expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.sha256).toMatch(SHA256_HEX);
     expect(await imageExists(`${repo}:1.2.3`)).toBe(true);
     expect(await imageExists(`${repo}:latest`)).toBe(true);
   }, 180_000);
