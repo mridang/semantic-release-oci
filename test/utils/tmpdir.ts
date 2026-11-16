@@ -26,7 +26,7 @@ export async function makeTemporaryDirectory(): Promise<string> {
 export async function removeTemporaryDirectories(): Promise<void> {
   const names = await readdir(root);
   await Promise.all(
-    names.map((name) =>
+    names.map(async (name) =>
       rm(path.join(root, name), { recursive: true, force: true }),
     ),
   );

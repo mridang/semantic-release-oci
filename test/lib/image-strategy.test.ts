@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
-import { OciConfig, OciPluginConfig } from '../../src/plugin-config.js';
+import type { OciPluginConfig } from '../../src/plugin-config.js';
+import { OciConfig } from '../../src/plugin-config.js';
 import type { VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 import { dockerSpy, runnerOf } from '../utils/runner.js';

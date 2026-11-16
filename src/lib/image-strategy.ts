@@ -1,6 +1,6 @@
 import SemanticReleaseError from '@semantic-release/error';
 import type { VerifyConditionsContext } from 'semantic-release';
-import { OciConfig } from '../plugin-config.js';
+import type { OciConfig } from '../plugin-config.js';
 import type { Runner } from '../utils/exec.js';
 import {
   assertDockerAvailable,

@@ -164,7 +164,7 @@ describe('dockerRun', () => {
         '--cache-from',
         'type=s3,bucket=b,secret_access_key=S3SECRET',
         '--cache-to',
-        `type=registry,ref=user:REGPASS${'@'}ghcr.io/x/y`,
+        `type=registry,ref=user:REGPASS@ghcr.io/x/y`,
         '--auth-token',
         'FLAGSECRET',
         '--password=JOINEDFLAGSECRET',
@@ -479,7 +479,8 @@ describe('dockerRun', () => {
     it('scrubs a thrown non-error', async () => {
       const { docker } = setup();
       spy.mockImplementation(() => {
-        throw 'plain s3cr3t';
+        const thrown: unknown = 'plain s3cr3t';
+        throw thrown;
       });
 
       await expect(
