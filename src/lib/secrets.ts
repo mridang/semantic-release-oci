@@ -3,13 +3,13 @@ import { redactSecrets } from '../utils/redact.js';
 /**
  * What a secret is replaced with.
  */
-const BUILD_ARG_OR_SET_ASSIGNMENT = /^(--build-arg|--set)=([\s\S]*)$/;
-const BUILD_ARG_NAME = /^[^=]*\.args\.([^=]*)$/;
+const BUILD_ARG_OR_SET_ASSIGNMENT = /^(--build-arg|--set)=([\s\S]*)$/u;
+const BUILD_ARG_NAME = /^[^=]*\.args\.([^=]*)$/u;
 const CREDENTIAL_IN_URL =
-  /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/i;
-const CACHE_FLAG_WITH_VALUE = /^--cache-(?:from|to)=/;
-const SECRET_FLAG = /^--secret=(.*)$/;
-const LINE_BREAK = /\r?\n/;
+  /^(?:[^=]*=)?(?:[a-z][a-z0-9+.-]*:\/\/)?[^\s/@:=]+:([^\s/@]+)$/iu;
+const CACHE_FLAG_WITH_VALUE = /^--cache-(?:from|to)=/u;
+const SECRET_FLAG = /^--secret=(.*)$/u;
+const LINE_BREAK = /\r?\n/u;
 
 const MASK = '[redacted]';
 
@@ -28,7 +28,7 @@ const MIN_DEFAULT_LENGTH = 6;
 
 /** A pattern for any of the keywords standing alone or set off by punctuation. */
 function wordIn(words: string[]): RegExp {
-  return new RegExp(`(?:^|[^a-z])(?:${words.join('|')})(?:[^a-z]|$)`, 'i');
+  return new RegExp(`(?:^|[^a-z])(?:${words.join('|')})(?:[^a-z]|$)`, 'iu');
 }
 
 /**
@@ -76,19 +76,19 @@ export const PUBLIC_KEY = wordIn([
  * `production` or `true` from an error would make it unreadable.
  */
 const COMMON_VALUE =
-  /^(?:true|false|yes|no|on|off|production|development|test|latest|debug|release)$/i;
+  /^(?:true|false|yes|no|on|off|production|development|test|latest|debug|release)$/iu;
 
 /**
  * Flags whose value is a credential, such as `--auth-token` or `--password`.
  * `--secret` is not one: its value only points at a secret.
  */
 const SENSITIVE_FLAG =
-  /^--(?:[a-z0-9]+-)*(?:token|password|passwd|credentials?|auth|api-?key)$/i;
+  /^--(?:[a-z0-9]+-)*(?:token|password|passwd|credentials?|auth|api-?key)$/iu;
 
 /**
  * Flags that take a cache specification.
  */
-const CACHE_FLAG = /^--cache-(?:from|to)$/;
+const CACHE_FLAG = /^--cache-(?:from|to)$/u;
 
 /**
  * A `KEY=value` assignment carried by an argument.
@@ -299,9 +299,9 @@ export async function secretsIn(
   const found = scanned.flat();
   const sent =
     input === undefined ? [] : [{ value: input, floor: MIN_SECRET_LENGTH }];
-  const values = [...found, ...sent]
-    .filter(({ value, floor }) => value.length >= floor)
-    .map(({ value }) => value);
+  const values = [...found, ...sent].flatMap(({ value, floor }) =>
+    value.length >= floor ? [value] : [],
+  );
   return [...new Set(values)];
 }
 

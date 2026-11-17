@@ -1,13 +1,10 @@
 import SemanticReleaseError from '@semantic-release/error';
+import { assertDockerAvailable, dockerRun } from './docker-run.js';
+import { Registry } from './registry.js';
+import type { DockerRun } from './docker-run.js';
 import type { VerifyConditionsContext } from 'semantic-release';
 import type { OciConfig } from '../plugin-config.js';
 import type { Runner } from '../utils/exec.js';
-import {
-  assertDockerAvailable,
-  dockerRun,
-  type DockerRun,
-} from './docker-run.js';
-import { Registry } from './registry.js';
 import type { BuildParams, BuildResult, BuildState } from './types.js';
 
 /**
@@ -68,7 +65,7 @@ export abstract class ImageStrategy {
     variables: Readonly<Record<string, string | number | undefined>>,
   ): string {
     return template.replaceAll(
-      /\{\{(\w+)\}\}/g,
+      /\{\{(\w+)\}\}/gu,
       (_match: string, key: string): string => {
         // Own keys only: `{{constructor}}` must not reach Object.prototype.
         const value = Object.hasOwn(variables, key)
@@ -90,9 +87,10 @@ export abstract class ImageStrategy {
     templates: readonly string[],
     variables: Readonly<Record<string, string | number | undefined>>,
   ): readonly string[] {
-    const rendered = templates
-      .map((template) => this.renderTemplate(template, variables))
-      .filter(Boolean);
+    const rendered = templates.flatMap((template) => {
+      const tag = this.renderTemplate(template, variables);
+      return tag ? [tag] : [];
+    });
     return [...new Set(rendered)];
   }
 

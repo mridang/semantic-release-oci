@@ -1,5 +1,5 @@
-import type { Config } from 'semantic-release';
 import { toList } from './utils/list.js';
+import type { Config } from 'semantic-release';
 
 /**
  * Values a JavaScript config file can leave in `dockerBake` to switch Docker
@@ -120,7 +120,7 @@ export class OciConfig {
    * template rendering; boolean `true` passes the key without a value.
    * @returns A shallow copy of the build-argument map.
    */
-  getDockerArgs(): Readonly<Record<string, string | boolean>> {
+  getDockerArgs() {
     return { ...this.config.dockerArgs };
   }
 
@@ -130,7 +130,7 @@ export class OciConfig {
    * without an argument.
    * @returns A shallow copy of the build-flag map.
    */
-  getDockerBuildFlags(): Readonly<Record<string, string | string[] | null>> {
+  getDockerBuildFlags() {
     return { ...this.config.dockerBuildFlags };
   }
 
@@ -208,7 +208,9 @@ export class OciConfig {
    */
   getDockerBuildCacheFrom(): readonly string[] {
     const cacheFrom = this.config.dockerBuildCacheFrom;
-    if (!cacheFrom) return [];
+    if (!cacheFrom) {
+      return [];
+    }
     return toList(cacheFrom);
   }
 

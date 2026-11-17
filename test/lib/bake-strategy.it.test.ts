@@ -1,13 +1,13 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { describe, it, expect, afterEach } from '@jest/globals';
 import { BakeStrategy } from '../../src/lib/bake-strategy.js';
-import type { OciPluginConfig } from '../../src/plugin-config.js';
 import { OciConfig } from '../../src/plugin-config.js';
-import type { BuildParams } from '../../src/lib/types.js';
 import { stepContext } from '../utils/context.js';
 import { execAsync } from '../utils/exec.js';
+import type { BuildParams } from '../../src/lib/types.js';
+import type { OciPluginConfig } from '../../src/plugin-config.js';
 
 /**
  * Whether a real `docker buildx bake` is reachable on this host. The
@@ -15,7 +15,7 @@ import { execAsync } from '../utils/exec.js';
  * or buildx is absent (e.g. CI runners without a Docker daemon) instead
  * of failing.
  */
-const SHA256_HEX = /^[a-f0-9]{64}$/;
+const SHA256_HEX = /^[a-f0-9]{64}$/u;
 
 const dockerAvailable: boolean = await (async () => {
   try {
@@ -96,6 +96,7 @@ describeOrSkip('BakeStrategy (integration, real docker buildx bake)', () => {
     await removeImage(`${repo}:latest`);
     if (projectDir) {
       await fs.promises.rm(projectDir, { recursive: true, force: true });
+      // eslint-disable-next-line require-atomic-updates -- the directory is reset after the awaited removal
       projectDir = '';
     }
   });

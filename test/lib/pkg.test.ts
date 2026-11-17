@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
+import { describe, it, expect, afterEach } from '@jest/globals';
 import {
-  makeTemporaryDirectory as makeTemporaryDir,
+  makeTemporaryDirectory,
   removeTemporaryDirectories,
 } from '../utils/tmpdir.js';
 import { parsePkgName, readPkg, buildImageRepo } from '../../src/lib/pkg.js';
@@ -28,7 +28,7 @@ describe('parsePkgName', () => {
 
 describe('readPkg', () => {
   it('should read and parse package.json from the directory', async () => {
-    const tmpDir = await makeTemporaryDir();
+    const tmpDir = await makeTemporaryDirectory();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       JSON.stringify({ name: 'my-app' }),
@@ -38,13 +38,13 @@ describe('readPkg', () => {
   });
 
   it('should return null when package.json is absent', async () => {
-    const tmpDir = await makeTemporaryDir();
+    const tmpDir = await makeTemporaryDirectory();
 
     expect(await readPkg(tmpDir)).toBeNull();
   });
 
   it('should return null when package.json is not an object', async () => {
-    const tmpDir = await makeTemporaryDir();
+    const tmpDir = await makeTemporaryDirectory();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '"just a string"',
@@ -54,7 +54,7 @@ describe('readPkg', () => {
   });
 
   it('should ignore a name that is not a string', async () => {
-    const tmpDir = await makeTemporaryDir();
+    const tmpDir = await makeTemporaryDirectory();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '{ "name": 7 }',
@@ -66,7 +66,7 @@ describe('readPkg', () => {
   });
 
   it('should return null when package.json is malformed', async () => {
-    const tmpDir = await makeTemporaryDir();
+    const tmpDir = await makeTemporaryDirectory();
     await fs.promises.writeFile(
       path.join(tmpDir, 'package.json'),
       '{ not valid json',

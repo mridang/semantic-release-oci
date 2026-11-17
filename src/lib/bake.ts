@@ -11,7 +11,7 @@ import type { DockerRun } from './docker-run.js';
  * @param imageTarget - Target whose digest is preferred, or `"*"`.
  * @returns The image digest hex, or an empty string when unavailable.
  */
-const SHA256_PREFIX = /^sha256:/;
+const SHA256_PREFIX = /^sha256:/u;
 
 export async function parseBakeDigest(
   metadataPath: string,

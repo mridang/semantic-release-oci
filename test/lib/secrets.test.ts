@@ -183,7 +183,7 @@ describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
       '(?:^|[^a-z])(?:token|secret|passw(?:or)?d|credentials?',
       'api-?key|access-?key|key|auth|cert|npmrc)(?:[^a-z]|$)',
     ].join('|'),
-    'i',
+    'iu',
   );
   const oldPublic = new RegExp(
     [
@@ -191,7 +191,7 @@ describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
       'git-?head|git-?commit|commit|revision|build-?date|build-?time',
       'channel)(?:[^a-z]|$)',
     ].join('|'),
-    'i',
+    'iu',
   );
 
   it.each([
@@ -214,6 +214,7 @@ describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
   it('matches the old patterns on seeded random names', () => {
     let state = 9;
     const random = (): number => {
+      // eslint-disable-next-line no-bitwise -- the generator is defined with a 32-bit unsigned shift
       state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
       return state / 2 ** 32;
     };

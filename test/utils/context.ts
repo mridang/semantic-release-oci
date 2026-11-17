@@ -15,7 +15,7 @@ export function stepContext(
   env: Readonly<Record<string, string>> = {},
   overrides: Readonly<Partial<Record<keyof PrepareContext, unknown>>> = {},
 ): PrepareContext {
-  const context: unknown = {
+  const context = {
     cwd,
     env,
     logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },
@@ -30,5 +30,5 @@ export function stepContext(
     ...overrides,
   };
   // The one place the partial fixture is declared to be the library's type.
-  return context as PrepareContext;
+  return context as unknown as PrepareContext;
 }

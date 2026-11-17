@@ -1,14 +1,15 @@
 import crypto from 'node:crypto';
 import { setOutput } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
+import { OciConfig } from './plugin-config.js';
+import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
+import { selectStrategy } from './lib/strategy.js';
+import type { OciPluginConfig } from './plugin-config.js';
 import type {
   PrepareContext,
   PublishContext,
   VerifyConditionsContext,
 } from 'semantic-release';
-import { OciConfig, type OciPluginConfig } from './plugin-config.js';
-import { parsePkgName, readPkg, buildImageRepo } from './lib/pkg.js';
-import { selectStrategy } from './lib/strategy.js';
 import type { BuildState } from './lib/types.js';
 
 /**
@@ -122,7 +123,9 @@ export async function prepare(
   const { repo } = await resolveImage(config, strategy.cwd);
   const key = stateKey(pluginConfig, context, strategy.cwd, repo);
   // A build that fails must not leave the previous one to be published.
+  // eslint-disable-next-line functional/immutable-data -- the build state is handed from the prepare step to the publish step through module state
   buildStates.set(key, undefined);
+  // eslint-disable-next-line functional/immutable-data -- the build state is handed from the prepare step to the publish step through module state
   published.delete(key);
   const isDryRun = context.options.dryRun === true;
 
@@ -152,6 +155,7 @@ export async function prepare(
   });
   const sha = sha256 ? sha256.slice(0, 12) : buildId;
 
+  // eslint-disable-next-line functional/immutable-data -- the build state is handed from the prepare step to the publish step through module state
   buildStates.set(key, {
     sha,
     sha256,
@@ -201,7 +205,9 @@ export async function publish(
   }
 
   await strategy.finalizePublish(state);
+  // eslint-disable-next-line functional/immutable-data -- the build state is handed from the prepare step to the publish step through module state
   buildStates.delete(key);
+  // eslint-disable-next-line functional/immutable-data -- the build state is handed from the prepare step to the publish step through module state
   published.add(key);
 
   try {
