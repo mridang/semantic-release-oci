@@ -49,6 +49,7 @@ describe('OciConfig', () => {
       'should treat dockerBake: %s from a plain config file as not configured',
       (raw) => {
         const config = makeConfig(
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the test feeds the config the JSON of a plain config file, including the null the type does not allow, and the repository has no schema library to validate it with
           JSON.parse(`{ "dockerBake": ${raw} }`) as OciPluginConfig,
         );
         expect(config.getDockerBake()).toBeUndefined();

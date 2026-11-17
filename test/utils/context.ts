@@ -27,8 +27,22 @@ export function stepContext(
       type: 'minor',
     },
     options: { dryRun: false },
+    stdout: process.stdout,
+    stderr: process.stderr,
+    envCi: { isCi: false, commit: 'abc1234', branch: 'main' },
+    branch: { name: 'main' },
+    branches: [],
+    commits: [],
+    releases: [],
+    lastRelease: {
+      version: '1.2.2',
+      gitTag: 'v1.2.2',
+      channels: [],
+      gitHead: 'abc1233',
+      name: 'v1.2.2',
+    },
     ...overrides,
   };
-  // The one place the partial fixture is declared to be the library's type.
-  return context as unknown as PrepareContext;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- the fixture supplies the parts the plugin uses, a recording logger instead of the full one and overrides of any type, so this is the one place it is declared to be the library's type
+  return context as PrepareContext;
 }

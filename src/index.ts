@@ -25,6 +25,16 @@ const buildStates = new Map<string, BuildState | undefined>();
 const published = new Set<string>();
 
 /**
+ * The name of a release channel. semantic-release types it as a string but
+ * reports the default channel as null at runtime.
+ * @param channel - The channel of the release.
+ * @returns The channel, or an empty string for the default channel.
+ */
+function channelName(channel: string | null): string {
+  return channel ?? '';
+}
+
+/**
  * The key a build is stored under between `prepare` and `publish`. It names
  * the plugin entry (a hash of its whole configuration), the release version,
  * the directory and the repository, so two entries for the same image, two
@@ -138,8 +148,7 @@ export async function prepare(
     patch,
     gitTag: nextRelease.gitTag,
     gitHead: nextRelease.gitHead,
-    // semantic-release reports the default channel as null at runtime.
-    channel: nextRelease.channel ?? '',
+    channel: channelName(nextRelease.channel),
     type: nextRelease.type,
     now: new Date().toISOString(),
   } satisfies Record<string, string | number | undefined>;

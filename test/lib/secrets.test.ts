@@ -240,7 +240,7 @@ describe('SENSITIVE_KEY and PUBLIC_KEY', () => {
     ];
     for (let index = 0; index < 20_000; index += 1) {
       let name = '';
-      for (let index = 0; index < 4; index += 1) {
+      for (let piece = 0; piece < 4; piece += 1) {
         name += pieces[Math.floor(random() * pieces.length)];
       }
       expect(SENSITIVE_KEY.test(name)).toBe(oldSensitive.test(name));
