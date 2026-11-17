@@ -17,7 +17,7 @@ export function parsePkgName(pkgname: string) {
   if (!match) {
     return { scope: null, name: null };
   }
-  return { scope: match[1] ?? null, name: match[2] };
+  return { scope: match.at(1) ?? null, name: match[2] };
 }
 
 /**

@@ -115,7 +115,7 @@ function detailsOf(error: unknown): readonly string[] {
  */
 export function dockerRun(options: DockerRunOptions): DockerRun {
   const run = options.run ?? defaultRun;
-  const readFile =
+  const reader =
     options.readFile ?? (async (file: string) => readText(options.cwd, file));
   const env = { ...process.env, ...options.env };
   return async (args, input) => {
@@ -123,7 +123,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     if (nul !== -1) {
       throw new Error(`Docker argument ${nul} contains a NUL byte.`);
     }
-    const secrets = await secretsIn(args, env, readFile, input);
+    const secrets = await secretsIn(args, env, reader, input);
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env.GITHUB_ACTIONS === 'true') {
