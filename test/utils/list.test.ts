@@ -24,6 +24,7 @@ describe('toList', () => {
     // Built from strings on purpose: this is the slow pattern the code used to hold.
     const oldPattern = new RegExp(
       [String.raw`\s*`, ',', String.raw`\s*`].join(''),
+      'u',
     );
     const reference = (value: string): string[] =>
       value.split(oldPattern).filter(Boolean);
@@ -32,6 +33,7 @@ describe('toList', () => {
     it('gives the same list for any string', () => {
       let seed = 4242;
       const below = (limit: number): number => {
+        // eslint-disable-next-line no-bitwise -- the generator is defined with a 32-bit unsigned shift
         seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0;
         return seed % limit;
       };

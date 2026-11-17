@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import type { OciPluginConfig } from '../src/plugin-config.js';
 import { OciConfig } from '../src/plugin-config.js';
+import type { OciPluginConfig } from '../src/plugin-config.js';
 
 function makeConfig(
   overrides: OciPluginConfig = {},
@@ -194,8 +194,9 @@ describe('OciConfig', () => {
       const original = ['a', 'b'];
       const config = makeConfig({ dockerTags: original });
 
-      expect(config.getDockerTags()).not.toBe(original);
-      expect(config.getDockerTags()).toEqual(['a', 'b']);
+      const tags = config.getDockerTags();
+      expect(tags).not.toBe(original);
+      expect(tags).toEqual(['a', 'b']);
     });
 
     it('should return a fresh platform array, not the config array', () => {
@@ -209,8 +210,9 @@ describe('OciConfig', () => {
       const original = { A: '1' };
       const config = makeConfig({ dockerArgs: original });
 
-      expect(config.getDockerArgs()).not.toBe(original);
-      expect(config.getDockerArgs()).toEqual({ A: '1' });
+      const args = config.getDockerArgs();
+      expect(args).not.toBe(original);
+      expect(args).toEqual({ A: '1' });
     });
 
     it('should drop empty entries from comma-split values', () => {

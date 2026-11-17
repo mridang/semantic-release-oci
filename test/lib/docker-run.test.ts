@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   afterEach,
   beforeEach,
@@ -6,35 +8,29 @@ import {
   it,
   jest,
 } from '@jest/globals';
-import {
-  assertDockerAvailable,
-  dockerRun,
-  type DockerRun,
-} from '../../src/lib/docker-run.js';
-import fs from 'node:fs';
-import path from 'node:path';
+import { assertDockerAvailable, dockerRun } from '../../src/lib/docker-run.js';
 import { dockerSpy, failure, runnerOf } from '../utils/runner.js';
 import {
-  makeTemporaryDirectory as makeTemporaryDir,
+  makeTemporaryDirectory,
   removeTemporaryDirectories,
 } from '../utils/tmpdir.js';
 
 const SECRET_MOUNT_REDACTED_LINE =
-  /\nsecretmount=\[redacted\] file=\[redacted\]$/;
-const FILE_REDACTED = /file=\[redacted\]$/;
-const UNREDACTED_FILE_SECRET = /file=FileSecretVal888$/;
-const REDACTED_PASSWORD_LINE = /\nunauthorized: bad password \[redacted\]$/;
-const REDACTED_PAT_LINE = /\npat=\[redacted\] ver=22\.1\.0$/;
-const REDACTED_TOKEN_LINE = /\ntok=\[redacted\] other=cd34$/;
-const REDACTED_USING_LINE = /using \[redacted\]" && false$/;
-const EXPORTING_LINE = /\nexporting sha256:abcdef0123 as 1\.2\.3$/;
+  /\nsecretmount=\[redacted\] file=\[redacted\]$/u;
+const FILE_REDACTED = /file=\[redacted\]$/u;
+const UNREDACTED_FILE_SECRET = /file=FileSecretVal888$/u;
+const REDACTED_PASSWORD_LINE = /\nunauthorized: bad password \[redacted\]$/u;
+const REDACTED_PAT_LINE = /\npat=\[redacted\] ver=22\.1\.0$/u;
+const REDACTED_TOKEN_LINE = /\ntok=\[redacted\] other=cd34$/u;
+const REDACTED_USING_LINE = /using \[redacted\]" && false$/u;
+const EXPORTING_LINE = /\nexporting sha256:abcdef0123 as 1\.2\.3$/u;
 const REDACTED_BUILD_LOG_LINES =
-  /\n#6 0\.1 \[redacted\]\n#6 0\.1 \[redacted\]\n#6 0\.2 \[redacted\]\n#6 0\.3 \[redacted\]$/;
+  /\n#6 0\.1 \[redacted\]\n#6 0\.1 \[redacted\]\n#6 0\.2 \[redacted\]\n#6 0\.3 \[redacted\]$/u;
 const REDACTED_TIMEOUT_LOG =
-  /\nETIMEDOUT\n#4 \[1\/2\] RUN sleep 9999 using \[redacted\]$/;
+  /\nETIMEDOUT\n#4 \[1\/2\] RUN sleep 9999 using \[redacted\]$/u;
 const REDACTED_BUILD_COMMAND =
-  /^Command failed: docker build --build-arg TOKEN=\[redacted\]$/;
-const REDACTED_PLAIN_LINE = /\nplain \[redacted\]$/;
+  /^Command failed: docker build --build-arg TOKEN=\[redacted\]$/u;
+const REDACTED_PLAIN_LINE = /\nplain \[redacted\]$/u;
 
 const spy = dockerSpy();
 
@@ -44,7 +40,7 @@ const spy = dockerSpy();
 function setup(
   env: Readonly<Record<string, string>> = {},
   timeoutMs = 600_000,
-): { docker: DockerRun; log: jest.Mock } {
+) {
   const log = jest.fn();
   return {
     docker: dockerRun({
@@ -285,7 +281,7 @@ describe('dockerRun', () => {
     });
 
     it('reads --secret files relative to the working directory by default', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await fs.promises.writeFile(
         path.join(dir, 'tok.txt'),
         'FileSecretVal888',
@@ -479,8 +475,8 @@ describe('dockerRun', () => {
     it('scrubs a thrown non-error', async () => {
       const { docker } = setup();
       spy.mockImplementation(() => {
-        const thrown: unknown = 'plain s3cr3t';
-        throw thrown;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- the test throws a non-error on purpose
+        throw 'plain s3cr3t';
       });
 
       await expect(

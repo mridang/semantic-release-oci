@@ -1,3 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   describe,
   it,
@@ -7,19 +12,14 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-import type { StartedTestContainer } from 'testcontainers';
 import { GenericContainer, Wait } from 'testcontainers';
 import { verifyConditions, prepare, publish } from '../src/index.js';
-import type { OciPluginConfig } from '../src/plugin-config.js';
-import { stepContext } from './utils/context.js';
 import { isRecord, stringAt } from '../src/utils/object.js';
+import { stepContext } from './utils/context.js';
+import type { StartedTestContainer } from 'testcontainers';
+import type { OciPluginConfig } from '../src/plugin-config.js';
 
-const LISTENING_ON = /listening on/;
+const LISTENING_ON = /listening on/u;
 
 const execAsync = promisify(exec);
 

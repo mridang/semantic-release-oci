@@ -1,12 +1,15 @@
-import { readFile as readTextFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setSecret } from '@actions/core';
 import SemanticReleaseError from '@semantic-release/error';
-import type { VerifyConditionsContext } from 'semantic-release';
 import { codeOf, signalOf, statusOf } from '../utils/error.js';
-import { run as defaultRun, type Runner } from '../utils/exec.js';
+// eslint-disable-next-line tslop/no-renamed-imports -- run is also the name of the injected runner inside the wrapper below
+import { run as defaultRun } from '../utils/exec.js';
 import { isRecord, stringAt } from '../utils/object.js';
-import { maskArgs, scrub, secretsIn, type FileReader } from './secrets.js';
+import { maskArgs, scrub, secretsIn } from './secrets.js';
+import type { Runner } from '../utils/exec.js';
+import type { FileReader } from './secrets.js';
+import type { VerifyConditionsContext } from 'semantic-release';
 
 /**
  * Runs one docker command and returns what it wrote to stdout. Every noun
@@ -47,7 +50,7 @@ async function readText(
   file: string,
 ): Promise<string | undefined> {
   try {
-    return await readTextFile(path.resolve(cwd, file), 'utf8');
+    return await readFile(path.resolve(cwd, file), 'utf8');
   } catch {
     return undefined;
   }
@@ -124,7 +127,10 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
     // `setSecret` prints `::add-mask::<value>` to stdout, which only the
     // GitHub Actions runner removes; anywhere else it would leak the value.
     if (env.GITHUB_ACTIONS === 'true') {
-      for (const secret of secrets) setSecret(secret);
+      // eslint-disable-next-line functional/no-loop-statements -- only reports each secret to the Actions runner
+      for (const secret of secrets) {
+        setSecret(secret);
+      }
     }
     const shown = scrub(['docker', ...maskArgs(args)].join(' '), secrets);
     options.logger.log(`Executing: ${shown}`);
@@ -140,7 +146,7 @@ export function dockerRun(options: DockerRunOptions): DockerRun {
         .map((detail) => scrub(detail, secrets))
         .filter((detail) => detail !== '');
       throw new DockerCommandError(
-        ['Command failed: ' + shown, ...details].join('\n'),
+        [`Command failed: ${shown}`, ...details].join('\n'),
         error,
       );
     }

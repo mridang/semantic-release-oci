@@ -1,20 +1,16 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { BuildStrategy } from '../../src/lib/build-strategy.js';
-import type { OciPluginConfig } from '../../src/plugin-config.js';
 import { OciConfig } from '../../src/plugin-config.js';
-import type { VerifyConditionsContext } from 'semantic-release';
 import { stepContext } from '../utils/context.js';
 import { dockerSpy, runnerOf } from '../utils/runner.js';
+import type { OciPluginConfig } from '../../src/plugin-config.js';
 
 const execMock = dockerSpy();
 
 function makeStrategy(
   pluginConfig: OciPluginConfig = {},
   env: Record<string, string> = {},
-): {
-  strategy: BuildStrategy;
-  context: VerifyConditionsContext;
-} {
+) {
   const context = stepContext('/work', env);
   const config = new OciConfig(pluginConfig, env);
   return {
@@ -71,7 +67,7 @@ describe('ImageStrategy', () => {
         { DOCKER_REGISTRY_USER: 'user', DOCKER_REGISTRY_PASSWORD: 'pass' },
       );
 
-      await strategy.login();
+      await expect(strategy.login()).resolves.toBeUndefined();
 
       expect(execMock).not.toHaveBeenCalled();
     });
@@ -79,7 +75,7 @@ describe('ImageStrategy', () => {
     it('should be a no-op when no credentials are present', async () => {
       const { strategy } = makeStrategy({ dockerImage: 'x' });
 
-      await strategy.login();
+      await expect(strategy.login()).resolves.toBeUndefined();
 
       expect(execMock).not.toHaveBeenCalled();
     });

@@ -93,6 +93,7 @@ export class BuildStrategy extends ImageStrategy {
     const built = new Build(docker, state.repo, state.buildId, state.sha256);
 
     if (!state.isBuildx && config.isPublishEnabled()) {
+      // eslint-disable-next-line functional/no-loop-statements -- the images are pushed one after the other
       for (const tag of this.versionTagsFirst(state)) {
         const image = await built.tag(tag);
         const { output } = await image.push();

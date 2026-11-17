@@ -1,10 +1,10 @@
-import type { DockerRun } from './docker-run.js';
 import { Image } from './image.js';
+import type { DockerRun } from './docker-run.js';
 
 /**
  * Matches the line of `docker build` output that names the image digest.
  */
-const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/i;
+const SHA_REGEX = /(?:writing image\s)?[^@]?(?:sha\d{3}):(?<sha>\w+)/iu;
 
 /**
  * A build argument: `value` is undefined for the form that takes the value

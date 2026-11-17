@@ -1,6 +1,7 @@
-import type { ChildProcess, execFile as ExecFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { ChildProcess, execFile } from 'node:child_process';
+
 type Child = { stdin: typeof stdin } | ChildProcess;
 
 const stdin = { on: jest.fn(), end: jest.fn() };
@@ -12,11 +13,12 @@ const execFileMock =
       options: Record<string, unknown>,
     ) => Promise<{ stdout: unknown; stderr: unknown }> & { child: Child }
   >();
-const actual = jest.requireActual<{ execFile: typeof ExecFile }>(
+const actual = jest.requireActual<{ execFile: typeof execFile }>(
   'node:child_process',
 );
 
 // run() promisifies execFile, so the mock stands in for the promisified form.
+// eslint-disable-next-line tslop/no-module-mocking -- run() imports execFile from node:child_process directly, so the module is the only seam
 jest.unstable_mockModule('node:child_process', () => ({
   execFile: Object.assign(jest.fn(), { [promisify.custom]: execFileMock }),
 }));
@@ -66,12 +68,12 @@ async function outcome(
 /**
  * The error a failed command rejects with.
  */
-async function rejection(promise: Promise<string>): Promise<unknown> {
+async function rejection(promise: Promise<string>): Promise<Error | undefined> {
   try {
     await promise;
     return undefined;
   } catch (error: unknown) {
-    return error;
+    return error instanceof Error ? error : new Error(String(error));
   }
 }
 

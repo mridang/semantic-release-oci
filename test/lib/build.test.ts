@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from '@jest/globals';
-import { Build, type BuildOptions } from '../../src/lib/build.js';
+import { Build } from '../../src/lib/build.js';
 import { dockerRun } from '../../src/lib/docker-run.js';
 import { dockerSpy, runnerOf } from '../utils/runner.js';
+import type { BuildOptions } from '../../src/lib/build.js';
 
 const spy = dockerSpy();
 
-// Declared without a value, so it is undefined: the options leave these unset.
-let unset: string | undefined;
+// The options leave these unset.
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const unset: string | undefined = undefined;
 
 const BUILD: BuildOptions = {
   buildx: false,
@@ -185,7 +187,7 @@ describe('Build', () => {
   it('removes nothing when there are no local images', async () => {
     spy.mockReturnValueOnce('  \n');
 
-    await build.remove();
+    await expect(build.remove()).resolves.toBeUndefined();
 
     expect(spy).toHaveBeenCalledTimes(1);
   });

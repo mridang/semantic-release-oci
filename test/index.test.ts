@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   describe,
   it,
@@ -6,28 +8,27 @@ import {
   beforeEach,
   afterEach,
 } from '@jest/globals';
-import fs from 'node:fs';
-import path from 'node:path';
 import { dockerSpy, failure } from './utils/runner.js';
 import {
-  makeTemporaryDirectory as makeTemporaryDir,
+  makeTemporaryDirectory,
   removeTemporaryDirectories,
 } from './utils/tmpdir.js';
 import { stepContext } from './utils/context.js';
 import type { Runner } from '../src/utils/exec.js';
 
-const VERIFIED_MESSAGE = /^Verified: image="my-app", dockerfile=/;
-const SHA_FIELD = /sha: [a-f0-9]{20}/;
-const BUILT_MESSAGE_MYORG = /^Docker image built: myorg\/my-app:/;
-const BUILT_MESSAGE_EMPTY_NAME = /^Docker image built: :/;
-const PUBLISHED_MESSAGE_MYORG = /^Published: myorg\/my-app \(tags: /;
-const PUBLISHED_MESSAGE = /^Published: my-app \(tags: /;
+const VERIFIED_MESSAGE = /^Verified: image="my-app", dockerfile=/u;
+const SHA_FIELD = /sha: [a-f0-9]{20}/u;
+const BUILT_MESSAGE_MYORG = /^Docker image built: myorg\/my-app:/u;
+const BUILT_MESSAGE_EMPTY_NAME = /^Docker image built: :/u;
+const PUBLISHED_MESSAGE_MYORG = /^Published: myorg\/my-app \(tags: /u;
+const PUBLISHED_MESSAGE = /^Published: my-app \(tags: /u;
 
 const execMock = dockerSpy();
 const runMock = jest.fn<Runner>();
 
 const actualExec = await import('../src/utils/exec.js');
 
+// eslint-disable-next-line tslop/no-module-mocking -- the plugin imports run from the exec module directly, so the module is the only seam
 jest.unstable_mockModule('../src/utils/exec.js', () => ({
   ...actualExec,
   run: runMock,
@@ -35,8 +36,9 @@ jest.unstable_mockModule('../src/utils/exec.js', () => ({
 
 const { verifyConditions, prepare, publish } = await import('../src/index.js');
 
-// Declared without a value, so it is undefined: the context has no cwd.
-let noCwd: string | undefined;
+// The context has no cwd.
+// eslint-disable-next-line sonarjs/no-undefined-assignment -- the tests need an explicit undefined to pass as an option
+const noCwd: string | undefined = undefined;
 
 async function writePackageJson(dir: string, name: string): Promise<void> {
   await fs.promises.writeFile(
@@ -67,7 +69,7 @@ describe('semantic-release-oci', () => {
 
   describe('verifyConditions', () => {
     it('should throw ENOENT when docker is not available', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
@@ -82,7 +84,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should throw EINVAL when no image name can be determined', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
 
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
@@ -91,7 +93,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should throw ENOENT when Dockerfile does not exist', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
 
       await expect(verifyConditions({}, stepContext(tmpDir))).rejects.toThrow(
@@ -100,7 +102,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should verify the bake file instead of the Dockerfile in bake mode', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await fs.promises.writeFile(
         path.join(tmpDir, 'docker-bake.hcl'),
@@ -116,7 +118,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should succeed without credentials when login is disabled', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
 
@@ -129,7 +131,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should skip login when credentials are present but login is disabled', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
 
@@ -148,7 +150,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should use dockerImage from config over package.json', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
 
       await expect(
@@ -157,7 +159,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should fall back to package.json name when dockerImage is not set', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'fallback-app');
       await writeDockerfile(tmpDir);
 
@@ -167,7 +169,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should log a verification summary on success', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
@@ -182,7 +184,7 @@ describe('semantic-release-oci', () => {
 
   describe('prepare', () => {
     it('should store build state and log the built image with a scraped sha', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue(
@@ -198,7 +200,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should render the default channel, reported as null, as empty', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(
         tmpDir,
@@ -223,7 +225,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should render missing version parts as empty', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(
         tmpDir,
@@ -261,7 +263,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should fall back to the buildId when no sha is in build output', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('Step 1/1 : FROM alpine\n');
       const context = stepContext(tmpDir);
@@ -274,7 +276,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should resolve image name and project from a scoped package.json', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, '@myorg/my-app');
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
@@ -287,7 +289,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should fall back to an empty image name with no config or package.json', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
 
@@ -299,7 +301,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should propagate build errors', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       execMock.mockImplementation(() => {
         throw failure('build failed');
@@ -316,7 +318,7 @@ describe('semantic-release-oci', () => {
     it.each<null | false>([null, false])(
       'should tag and push as a plain build when dockerBake is %j',
       async (dockerBake) => {
-        const tmpDir = await makeTemporaryDir();
+        const tmpDir = await makeTemporaryDirectory();
         await writeDockerfile(tmpDir);
         const config = structuredClone({
           dockerImage: 'no-bake',
@@ -334,7 +336,7 @@ describe('semantic-release-oci', () => {
     );
 
     it('should consume the build state so a second publish is skipped', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
       await prepare({ dockerImage: 'consumed' }, context);
@@ -350,7 +352,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should keep two plugin entries for one image in one directory apart', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await writeDockerfile(dir);
       await fs.promises.writeFile(
         path.join(dir, 'Dockerfile.alpine'),
@@ -378,7 +380,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should not publish a build of another release version', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await writeDockerfile(dir);
       const config = { dockerImage: 'versions' };
       await prepare(config, stepContext(dir));
@@ -407,7 +409,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should refuse to publish when the prepare of this release failed', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await writeDockerfile(dir);
       const config = { dockerImage: 'stale' };
       const context = stepContext(dir);
@@ -427,7 +429,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should publish after a prepare that was retried successfully', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await writeDockerfile(dir);
       const config = { dockerImage: 'retried', dockerTags: ['1.2.3'] };
       const context = stepContext(dir);
@@ -444,7 +446,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should keep the build when publishing fails so that it can be retried', async () => {
-      const dir = await makeTemporaryDir();
+      const dir = await makeTemporaryDirectory();
       await writeDockerfile(dir);
       const config = { dockerImage: 'flaky', dockerTags: ['1.2.3'] };
       const context = stepContext(dir);
@@ -463,8 +465,8 @@ describe('semantic-release-oci', () => {
     });
 
     it('should keep builds of the same repository from different directories apart', async () => {
-      const first = await makeTemporaryDir();
-      const second = await makeTemporaryDir();
+      const first = await makeTemporaryDirectory();
+      const second = await makeTemporaryDirectory();
       await writeDockerfile(first);
       await writeDockerfile(second);
       const config = { dockerImage: 'shared', dockerTags: ['1.2.3'] };
@@ -485,7 +487,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should fail when no image was built for this release and entry', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
 
@@ -497,7 +499,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should fail when prepare and publish use different configuration', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       const context = stepContext(tmpDir);
       await prepare({ dockerImage: 'mismatch' }, context);
@@ -511,7 +513,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should delegate finalization to the strategy for standard builds', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
@@ -530,7 +532,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should publish with a fallback empty image name', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
 
@@ -551,7 +553,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should resolve the repo from a scoped package.json on publish', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, '@myorg/my-app');
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');
@@ -570,7 +572,7 @@ describe('semantic-release-oci', () => {
     });
 
     it('should log a published summary on success', async () => {
-      const tmpDir = await makeTemporaryDir();
+      const tmpDir = await makeTemporaryDirectory();
       await writePackageJson(tmpDir, 'my-app');
       await writeDockerfile(tmpDir);
       execMock.mockReturnValue('writing image sha256:abc123\n');

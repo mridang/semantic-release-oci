@@ -5,21 +5,18 @@ import { isRecord, stringAt } from '../utils/object.js';
 /**
  * Splits a package name into its optional scope and the rest.
  */
-const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/;
+const NAME_EXP = /^(?:@([^/]+)\/)?(.+)$/u;
 
 /**
  * Splits an npm package name into its optional scope and bare name.
  * @param pkgname - Package name, optionally scoped (`@scope/name`).
  * @returns The parsed `scope` and `name`, each `null` when absent.
  */
-export function parsePkgName(pkgname: string): {
-  /** The scope without its `@`, or null. */
-  readonly scope: string | null;
-  /** The bare name, or null. */
-  readonly name: string | null;
-} {
+export function parsePkgName(pkgname: string) {
   const match = NAME_EXP.exec(pkgname);
-  if (!match) return { scope: null, name: null };
+  if (!match) {
+    return { scope: null, name: null };
+  }
   return { scope: match[1] ?? null, name: match[2] };
 }
 

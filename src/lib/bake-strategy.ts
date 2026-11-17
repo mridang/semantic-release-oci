@@ -1,12 +1,12 @@
 import os from 'node:os';
 import path from 'node:path';
 import SemanticReleaseError from '@semantic-release/error';
-import type { VerifyConditionsContext } from 'semantic-release';
-import type { BakeSettings, OciConfig } from '../plugin-config.js';
-import type { Runner } from '../utils/exec.js';
 import { pathExists } from '../utils/fs.js';
 import { Bake } from './bake.js';
 import { ImageStrategy } from './image-strategy.js';
+import type { VerifyConditionsContext } from 'semantic-release';
+import type { BakeSettings, OciConfig } from '../plugin-config.js';
+import type { Runner } from '../utils/exec.js';
 import type { BuildParams, BuildResult } from './types.js';
 
 /**
@@ -77,10 +77,12 @@ export class BakeStrategy extends ImageStrategy {
 
     const dockerArgs = Object.entries(config.getDockerArgs());
 
-    for (const [key] of dockerArgs.filter(([, value]) => value === true))
+    // eslint-disable-next-line functional/no-loop-statements -- only reports each build argument that bake mode ignores
+    for (const [key] of dockerArgs.filter(([, value]) => value === true)) {
       context.logger.log(
         `Build arg "${key}" without a value is not supported in bake mode; declare it in the bake file.`,
       );
+    }
 
     const baked = await new Bake(docker, {
       file: path.resolve(cwd, bake.file),
